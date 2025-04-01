@@ -1,6 +1,6 @@
-# Argentinian Spanish Translator
+# Argentinian Spanish Translator 🧉
 
-An interactive application that translates English or Spanish text into authentic Argentinian Spanish with regional slang, colloquialisms, and expressions.
+An interactive web application that translates English or Spanish text into authentic Argentinian Spanish, complete with regional slang, colloquialisms, and expressions. Built with Chainlit and powered by OpenAI's Realtime API for voice interactions.
 
 ## 🌟 Key Features
 
@@ -9,6 +9,7 @@ An interactive application that translates English or Spanish text into authenti
 - **Voice Mode Support**: Speak and get translations through voice using OpenAI's Realtime API
 - **Interactive Web UI**: Clean interface powered by Chainlit
 - **Vector Search**: Semantic search for finding relevant Argentinian expressions
+- **Prompt Management**: Easy-to-edit prompts stored in markdown files
 
 ## 🛠️ Technology Stack
 
@@ -28,11 +29,17 @@ An interactive application that translates English or Spanish text into authenti
 
 ### Installation
 
-1. Clone the repository
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/arg-translator.git
+   cd arg-translator
+   ```
+
 2. Install dependencies:
    ```bash
    pdm install
    ```
+
 3. Create a `.env` file based on `.env.example`:
    ```
    OPENAI_API_KEY=your_api_key_here
@@ -58,16 +65,51 @@ The application uses a CSV file (`phrases.csv`) with Argentinian expressions fol
 
 ## 🧩 Project Structure
 
-- `app.py`: Main application with Chainlit UI and handlers
-- `translator.py`: Core translation logic using LangChain
-- `loaders/csv_loader.py`: Loads and processes Argentinian Spanish data
-- `realtime/`: Handles OpenAI's Realtime API for voice interactions
-- `phrases.csv`: Database of Argentinian expressions
+```
+arg-translator/
+├── app.py                 # Main application with Chainlit UI and handlers
+├── translator.py          # Core translation logic using LangChain
+├── loaders/
+│   └── csv_loader.py     # Loads and processes Argentinian Spanish data
+├── realtime/             # Handles OpenAI's Realtime API for voice interactions
+├── prompts/              # Markdown files containing prompts
+│   ├── system.md         # System prompt for the translator
+│   ├── translation.md    # Translation prompt template
+│   └── manager.py        # Prompt management utilities
+├── phrases.csv           # Database of Argentinian expressions
+├── chainlit.md          # Chainlit welcome screen content
+├── .env.example         # Example environment variables
+└── README.md            # Project documentation
+```
+
+## 🎯 Usage Examples
+
+### Text Translation
+```
+User: Hello, how are you?
+Bot: ¡Hola che! ¿Cómo andás?
+```
+
+### Voice Translation
+1. Press 'P' to activate voice mode
+2. Speak your message
+3. Receive both text and spoken translation
 
 ## 🤝 Contributing
 
-Contributions are welcome! Feel free to add more Argentinian expressions to the CSV file or improve the translation logic.
+Contributions are welcome! Here's how you can help:
+
+1. Add more Argentinian expressions to `phrases.csv`
+2. Improve translation prompts in `prompts/`
+3. Enhance the UI/UX
+4. Add new features or bug fixes
 
 ## 📝 License
 
-MIT
+MIT License - feel free to use this project for your own purposes.
+
+## 🙏 Acknowledgments
+
+- OpenAI for the Realtime API
+- Chainlit team for the amazing web interface
+- The LangChain community for their excellent tools
