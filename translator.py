@@ -9,6 +9,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 import pandas as pd
+from prompts.manager import PromptManager
 
 
 class ArgentinianTranslator:
@@ -31,6 +32,7 @@ class ArgentinianTranslator:
         self.vector_store = vector_store
         self.reference_df = reference_df
         self.llm = llm or ChatOpenAI(temperature=0.7)
+        self.prompt_manager = PromptManager()
         self.setup_translation_chain()
         
     def setup_translation_chain(self):
@@ -40,19 +42,8 @@ class ArgentinianTranslator:
         This configures the prompt to instruct the model to translate text
         into authentic Argentinian Spanish using appropriate slang and expressions.
         """
-        translation_template = """
-        You are an expert Argentinian Spanish translator. Translate the following text into 
-        authentic, casual Argentinian Spanish, using appropriate slang, voseo, and local expressions.
-        
-        Reference phrases:
-        {reference_phrases}
-        
-        Text to translate: {text}
-        
-        Translation:"""
-        
         self.prompt = PromptTemplate(
-            template=translation_template,
+            template=self.prompt_manager.translation_prompt,
             input_variables=["text", "reference_phrases"]
         )
         

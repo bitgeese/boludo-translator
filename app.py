@@ -5,27 +5,29 @@ This module provides a web interface for translating text to Argentinian Spanish
 with support for both text and voice interactions via OpenAI's Realtime API.
 """
 
-# import os
 import asyncio
 from dotenv import load_dotenv
-# from openai import AsyncOpenAI
-
 import chainlit as cl
 from uuid import uuid4
 from chainlit.logger import logger
 
+# Import custom modules
 from realtime import RealtimeClient
 from realtime.tools import tools
+from loaders import ArgentinianSpanishLoader
+from translator import ArgentinianTranslator
+from prompts.manager import PromptManager
 
-# client = AsyncOpenAI()
-
+# Load environment variables
 load_dotenv()
 
-# Configure Chainlit settings
+
+# Chainlit event handlers
 @cl.on_settings_update
 async def setup_agent(settings):
     """Update user settings when changed from the UI."""
     cl.user_session.set("settings", settings)
+
 
 @cl.on_chat_start
 async def start():
@@ -40,6 +42,10 @@ async def start():
     }
     cl.user_session.set("settings", settings)
     
+    # Load prompts
+    prompt_manager = PromptManager()
+    
+    # Send welcome message
     await cl.Message(
         content="¡Bienvenido che! I'm your Argentinian Spanish translator. Send me a message in English or Spanish, and I'll translate it to casual Argentinian Spanish. You can also use voice mode by pressing 'P'."
     ).send()
@@ -54,28 +60,34 @@ async def start():
     # Store in user session
     cl.user_session.set("translator", translator)
     
+    # Set up OpenAI realtime for voice capabilities
     await setup_openai_realtime()
 
-# @cl.on_chat_start
-# async def start():
-#     await cl.Message(
-#         content="Welcome to the Chainlit x OpenAI realtime example. Press `P` to talk!"
-#     ).send()
-#     await setup_openai_realtime()
 
-
-# @cl.on_message
-# async def on_message(message: cl.Message):
-#     openai_realtime: RealtimeClient = cl.user_session.get("openai_realtime")
-#     if openai_realtime and openai_realtime.is_connected():
-#         # TODO: Try image processing with message.elements
-#         await openai_realtime.send_user_message_content(
-#             [{"type": "input_text", "text": message.content}]
-#         )
-#     else:
-#         await cl.Message(
-#             content="Please activate voice mode before sending messages!"
-#         ).send()
+@cl.on_message
+async def on_message(message: cl.Message):
+    """Handle incoming text messages and provide translations."""
+    translator = cl.user_session.get("translator")
+    openai_realtime: RealtimeClient = cl.user_session.get("openai_realtime")
+    
+    if translator:
+        # Translate the message
+        translation_result = await translator.translate(message.content)
+        
+        # Send the translation result
+        await cl.Message(
+            content=f"Translation: {translation_result['argentinian_translation']}"
+        ).send()
+        
+        # If realtime client is connected and voice mode is active, also send to it
+        if openai_realtime and openai_realtime.is_connected():
+            await openai_realtime.send_user_message_content(
+                [{"type": "input_text", "text": translation_result["argentinian_translation"]}]
+            )
+    else:
+        await cl.Message(
+            content="Error: Translator not initialized. Please try again."
+        ).send()
 
 
 @cl.on_audio_start
@@ -104,6 +116,34 @@ async def on_audio_chunk(chunk: cl.InputAudioChunk):
 
 
 @cl.on_audio_end
+async def on_audio_end():
+    """Handle the end of audio input and process the transcription."""
+    openai_realtime: RealtimeClient = cl.user_session.get("openai_realtime")
+    translator = cl.user_session.get("translator")
+    
+    if openai_realtime and openai_realtime.is_connected():
+        # Get the transcription from the realtime client
+        transcription = await openai_realtime.get_transcription()
+        
+        if transcription and translator:
+            # Translate the transcribed text
+            translation_result = await translator.translate(transcription)
+            
+            # Send the translation result
+            await cl.Message(
+                content=f"Translation: {translation_result['argentinian_translation']}"
+            ).send()
+            
+            # Send the translation to the realtime client for voice output
+            await openai_realtime.send_user_message_content(
+                [{"type": "input_text", "text": translation_result["argentinian_translation"]}]
+            )
+        else:
+            await cl.Message(
+                content="Error: Could not process voice input. Please try again."
+            ).send()
+
+
 @cl.on_chat_end
 @cl.on_stop
 async def on_end():
@@ -112,36 +152,6 @@ async def on_end():
     if openai_realtime and openai_realtime.is_connected():
         await openai_realtime.disconnect()
 
-
-# Add to your imports
-from loaders import ArgentinianSpanishLoader
-from translator import ArgentinianTranslator
-
-# Modify your @cl.on_message function
-@cl.on_message
-async def on_message(message: cl.Message):
-    """Handle incoming text messages and provide translations."""
-    translator = cl.user_session.get("translator")
-    openai_realtime: RealtimeClient = cl.user_session.get("openai_realtime")
-    
-    if translator:
-        # Translate the message
-        translation_result = await translator.translate(message.content)
-        
-        # Send the translation result
-        await cl.Message(
-            content=f"Translation: {translation_result['argentinian_translation']}"
-        ).send()
-        
-        # If realtime client is connected and voice mode is active, also send to it
-        if openai_realtime and openai_realtime.is_connected():
-            await openai_realtime.send_user_message_content(
-                [{"type": "input_text", "text": translation_result["argentinian_translation"]}]
-            )
-    else:
-        await cl.Message(
-            content="Error: Translator not initialized. Please try again."
-        ).send()
 
 async def setup_openai_realtime():
     """
