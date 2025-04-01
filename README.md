@@ -1,12 +1,11 @@
 # Argentinian Spanish Translator 🧉
 
-An interactive web application that translates English or Spanish text into authentic Argentinian Spanish, complete with regional slang, colloquialisms, and expressions. Built with Chainlit and powered by OpenAI's Realtime API for voice interactions.
+An interactive web application that translates English or Spanish text into authentic Argentinian Spanish, complete with regional slang, colloquialisms, and expressions. Built with Chainlit.
 
 ## 🌟 Key Features
 
 - **Natural Language Translation**: Converts standard English/Spanish to authentic Argentinian Spanish
 - **Context-Aware Translations**: Uses a curated database of Argentinian expressions and slang
-- **Voice Mode Support**: Speak and get translations through voice using OpenAI's Realtime API
 - **Interactive Web UI**: Clean interface powered by Chainlit
 - **Vector Search**: Semantic search for finding relevant Argentinian expressions
 - **Prompt Management**: Easy-to-edit prompts stored in markdown files
@@ -14,7 +13,7 @@ An interactive web application that translates English or Spanish text into auth
 ## 🛠️ Technology Stack
 
 - **LangChain**: For managing LLM interactions and prompt templates
-- **OpenAI**: For high-quality translations and voice processing
+- **OpenAI**: For high-quality translations
 - **FAISS**: For efficient vector similarity search
 - **Chainlit**: For the interactive web interface
 - **PDM**: Python package management
@@ -71,7 +70,6 @@ arg-translator/
 ├── translator.py          # Core translation logic using LangChain
 ├── loaders/
 │   └── csv_loader.py     # Loads and processes Argentinian Spanish data
-├── realtime/             # Handles OpenAI's Realtime API for voice interactions
 ├── prompts/              # Markdown files containing prompts
 │   ├── system.md         # System prompt for the translator
 │   ├── translation.md    # Translation prompt template
@@ -90,11 +88,6 @@ User: Hello, how are you?
 Bot: ¡Hola che! ¿Cómo andás?
 ```
 
-### Voice Translation
-1. Press 'P' to activate voice mode
-2. Speak your message
-3. Receive both text and spoken translation
-
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how you can help:
@@ -110,6 +103,5 @@ MIT License - feel free to use this project for your own purposes.
 
 ## 🙏 Acknowledgments
 
-- OpenAI for the Realtime API
 - Chainlit team for the amazing web interface
 - The LangChain community for their excellent tools

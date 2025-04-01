@@ -11,12 +11,6 @@ This application helps you translate standard English or Spanish into authentic 
 2. Hit send to receive an Argentinian Spanish translation
 3. The translation will include authentic Argentinian expressions and slang
 
-### Voice Translation
-1. Press the 'P' key on your keyboard to activate voice mode
-2. Speak clearly into your microphone
-3. The system will translate your spoken words into Argentinian Spanish
-4. You'll hear the translation spoken back to you
-
 ## 💡 Examples to Try
 
 ### Basic Greetings
