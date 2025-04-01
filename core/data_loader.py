@@ -50,20 +50,42 @@ def _load_data_from_csv(file_path: str) -> pd.DataFrame:
 def _create_documents_from_dataframe(df: pd.DataFrame) -> List[Document]:
     """Converts DataFrame rows into LangChain Document objects."""
     documents = []
-    for _, row in df.iterrows():
+    # Define expected columns for clarity
+    expected_cols = [
+        'Original Phrase/Word', 'Argentinian Equivalent', 'Explanation (Context/Usage)',
+        'Region Specificity', 'Level of Formality', 'Example Sentence (Spanish)',
+        'Example Sentence (English)', 'Connotation', 'Register'
+    ]
+    # Check if expected columns exist in the DataFrame after enrichment
+    if not all(col in df.columns for col in expected_cols):
+        missing = [col for col in expected_cols if col not in df.columns]
+        logger.error(f"Enriched DataFrame is missing expected columns: {missing}. Cannot create documents.")
+        # Raise specific error
+        raise DataLoaderError(f"Enriched DataFrame is missing expected columns: {missing}")
+        
+    for index, row in df.iterrows():
+        # Include enriched fields in the page_content
+        # Use .get() with defaults for robustness against missing data (though checked above)
         content = f"""
-        Original: {row['Original Phrase/Word']}
-        Argentinian: {row['Argentinian Equivalent']}
-        Context: {row['Explanation (Context/Usage)']}
-        Region: {row['Region Specificity']}
-        Formality: {row['Level of Formality']}
+        Original: {row.get('Original Phrase/Word', '')}
+        Argentinian: {row.get('Argentinian Equivalent', '')}
+        Context/Explanation: {row.get('Explanation (Context/Usage)', '')}
+        Region: {row.get('Region Specificity', 'Unknown')}
+        Register: {row.get('Register', 'Unknown')}
+        Connotation: {row.get('Connotation', 'Unknown')}
+        Example (Spanish): {row.get('Example Sentence (Spanish)', '')}
+        Example (English): {row.get('Example Sentence (English)', '')}
+        Formality: {row.get('Level of Formality', 'Unknown')} # Keep original formality too?
         """
         metadata = {
-            "original": str(row['Original Phrase/Word']),
-            "argentinian": str(row['Argentinian Equivalent']),
-            "context": str(row['Explanation (Context/Usage)']),
-            "region": str(row['Region Specificity']),
-            "formality": str(row['Level of Formality'])
+            "original": str(row.get('Original Phrase/Word', '')),
+            "argentinian": str(row.get('Argentinian Equivalent', '')),
+            "context": str(row.get('Explanation (Context/Usage)', '')),
+            "region": str(row.get('Region Specificity', 'Unknown')),
+            "formality": str(row.get('Level of Formality', 'Unknown')),
+            # Add new fields to metadata as well for potential filtering later
+            "register": str(row.get('Register', 'Unknown')),
+            "connotation": str(row.get('Connotation', 'Unknown'))
         }
         # Ensure all metadata values are strings for FAISS compatibility
         doc = Document(page_content=content.strip(), metadata=metadata)
