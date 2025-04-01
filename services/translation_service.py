@@ -11,6 +11,7 @@ from langchain_community.vectorstores import FAISS
 
 from core.translator import ArgentinianTranslator
 from core.prompt_manager import PromptManager
+from core.exceptions import TranslationError, AppError
 
 logger = logging.getLogger(__name__)
 
@@ -60,4 +61,9 @@ class TranslationService:
             # Log the error originating from the translator
             logger.error(f"TranslationService encountered an error during translation: {e}", exc_info=True)
             # Re-raise or handle as appropriate for the application layer
-            raise RuntimeError("Translation failed within the service.") from e 
+            # Wrap core errors in a service-level error if desired, or just re-raise
+            if isinstance(e, TranslationError):
+                raise # Re-raise the specific error
+            else:
+                # Wrap unexpected errors from the core layer or dependencies
+                raise AppError("An unexpected error occurred in the translation core.") from e 

@@ -12,7 +12,10 @@ from langchain_community.vectorstores import FAISS
 from typing import List, Tuple
 import logging
 
-from config import PHRASES_CSV_PATH, OPENAI_API_KEY
+# Import the settings object
+from config import settings
+# Import custom exception
+from .exceptions import DataLoaderError
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +31,21 @@ def _load_data_from_csv(file_path: str) -> pd.DataFrame:
         ]
         if not all(col in df.columns for col in required_cols):
             missing = [col for col in required_cols if col not in df.columns]
-            raise ValueError(f"CSV missing required columns: {missing}")
+            # Raise specific error
+            raise DataLoaderError(f"CSV missing required columns: {missing}")
         return df
     except FileNotFoundError:
         logger.error(f"Error: CSV file not found at {file_path}")
-        raise
+        # Raise specific error
+        raise DataLoaderError(f"CSV file not found at {file_path}") from None
+    except ValueError as e:
+        # Catch potential value errors from validation and wrap them
+        logger.error(f"Data validation error in CSV {file_path}: {e}")
+        raise DataLoaderError(f"Data validation error in CSV: {e}") from e
     except Exception as e:
-        logger.error(f"Error loading or validating CSV from {file_path}: {e}")
-        raise
+        logger.error(f"Error loading or validating CSV from {file_path}: {e}", exc_info=True)
+        # Raise specific error, chaining the original exception
+        raise DataLoaderError(f"Failed to load or validate CSV: {e}") from e
 
 def _create_documents_from_dataframe(df: pd.DataFrame) -> List[Document]:
     """Converts DataFrame rows into LangChain Document objects."""
@@ -70,34 +80,40 @@ def _create_vector_store(documents: List[Document], api_key: str) -> FAISS:
         logger.info("Successfully created FAISS vector store.")
         return vector_store
     except Exception as e:
-        logger.error(f"Failed to create vector store: {e}")
-        raise
+        logger.error(f"Failed to create vector store: {e}", exc_info=True)
+        # Raise specific error
+        raise DataLoaderError(f"Failed to create FAISS vector store: {e}") from e
 
-def load_vector_store_and_data() -> Tuple[FAISS, pd.DataFrame]:
+def load_vector_store_and_data() -> FAISS:
     """
     Loads data from the configured CSV, creates Documents, builds a FAISS
-    vector store, and returns the store and the original DataFrame.
+    vector store, and returns the store.
 
-    Uses configuration from the `config` module.
+    Uses configuration from the `config.settings` object.
 
     Returns:
-        A tuple containing the FAISS vector store and the reference DataFrame.
+        The FAISS vector store.
 
     Raises:
-        FileNotFoundError: If the CSV file is not found.
-        ValueError: If the CSV is missing required columns or data is invalid.
-        Exception: For other potential errors during loading or embedding.
+        DataLoaderError: If any step in the loading or processing fails.
     """
-    logger.info(f"Starting data loading process from {PHRASES_CSV_PATH}...")
-    df = _load_data_from_csv(PHRASES_CSV_PATH)
-    if df.empty:
-        raise ValueError(f"No data loaded from {PHRASES_CSV_PATH}. Cannot proceed.")
-        
-    documents = _create_documents_from_dataframe(df)
-    if not documents:
-         raise ValueError("No documents were created from the DataFrame. Cannot proceed.")
+    logger.info(f"Starting data loading process from {settings.PHRASES_CSV_PATH}...")
+    try:
+        df = _load_data_from_csv(settings.PHRASES_CSV_PATH)
+        if df.empty:
+            raise DataLoaderError(f"No data loaded from {settings.PHRASES_CSV_PATH}. Cannot proceed.")
+            
+        documents = _create_documents_from_dataframe(df)
+        if not documents:
+             raise DataLoaderError("No documents were created from the DataFrame. Cannot proceed.")
 
-    vector_store = _create_vector_store(documents, OPENAI_API_KEY)
-    
-    logger.info("Data loading and vector store creation complete.")
-    return vector_store, df
+        vector_store = _create_vector_store(documents, settings.OPENAI_API_KEY)
+        
+        logger.info("Data loading and vector store creation complete.")
+        # Return only the vector store
+        return vector_store
+    except DataLoaderError: # Re-raise specific errors
+        raise
+    except Exception as e: # Catch any other unexpected errors
+        logger.exception("An unexpected error occurred during data loading.")
+        raise DataLoaderError("An unexpected error occurred during data loading.") from e
