@@ -1,0 +1,5 @@
+chainlit
+openai
+yfinance
+plotly
+websockets==14.1
