@@ -66,18 +66,22 @@ The application uses a CSV file (`phrases.csv`) with Argentinian expressions fol
 
 ```
 arg-translator/
-├── app.py                 # Main application with Chainlit UI and handlers
-├── translator.py          # Core translation logic using LangChain
-├── loaders/
-│   └── csv_loader.py     # Loads and processes Argentinian Spanish data
-├── prompts/              # Markdown files containing prompts
-│   ├── system.md         # System prompt for the translator
-│   ├── translation.md    # Translation prompt template
-│   └── manager.py        # Prompt management utilities
-├── phrases.csv           # Database of Argentinian expressions
-├── chainlit.md          # Chainlit welcome screen content
-├── .env.example         # Example environment variables
-└── README.md            # Project documentation
+├── app.py                 # Main Chainlit application, UI event handlers
+├── config.py              # Configuration settings (API keys, paths)
+├── core/
+│   ├── data_loader.py     # Loads CSV, creates Documents & vector store
+│   ├── prompt_manager.py  # Loads prompt templates from files
+│   └── translator.py      # Core LangChain RAG translation logic
+├── data/
+│   └── phrases.csv        # Database of Argentinian expressions
+├── prompts/               # Directory for prompt markdown files
+│   ├── system.md          # System prompt for the translator
+│   └── translation.md     # Translation prompt template
+├── services/
+│   └── translation_service.py # Service layer orchestrating translation
+├── chainlit.md            # Chainlit welcome screen content
+├── .env.example           # Example environment variables
+└── README.md              # Project documentation
 ```
 
 ## 🎯 Usage Examples

@@ -1,8 +1,11 @@
-Translate the following text into authentic, casual Argentinian Spanish, using appropriate slang, voseo, and local expressions.
+# Translation Prompt Placeholder
 
-Reference phrases:
+Translate the following text into casual, authentic Argentinian Spanish, using appropriate slang and the 'voseo' form where applicable. Use the provided reference phrases for context if relevant.
+
+Reference Phrases:
 {reference_phrases}
 
-Text to translate: {text}
+Text to Translate:
+{text}
 
-Translation: 
+Argentinian Spanish Translation: 
