@@ -15,6 +15,8 @@ from core.prompt_manager import PromptManager
 from services.translation_service import TranslationService
 # Import the settings object
 from config import settings 
+# Import RunnableConfig
+from langchain_core.runnables.config import RunnableConfig
 # Import custom exceptions
 from core.exceptions import AppError, DataLoaderError, PromptError, TranslationError 
 
@@ -98,15 +100,31 @@ async def on_message(message: cl.Message):
         logger.warning("Received empty message.")
         return # Ignore empty messages
 
+    # Conditionally add the callback handler for step visibility
+    callbacks = []
+    if settings.DEBUG:
+        callbacks.append(cl.LangchainCallbackHandler())
+        logger.info("Debug mode enabled: Adding LangchainCallbackHandler for step visibility.")
+        
+    config = RunnableConfig(callbacks=callbacks)
+
     try:
-        # Use the service to translate
-        async with cl.Step(name="Translate"):
-            translation_result = await service.translate_text(message.content)
-            
-            # Send the translation result
-            await cl.Message(
-                content=f"Translation: {translation_result}"
-            ).send()
+        # Use the service to translate, passing the config (with or without callbacks)
+        if settings.DEBUG:
+            # When debugging, let the callback handler manage steps
+            translation_result = await service.translate_text(message.content, config=config)
+        else:
+            # When not debugging, show a simple progress step
+            async with cl.Step(name="Translating...") as step:
+                # Config will have empty callbacks list here
+                translation_result = await service.translate_text(message.content, config=config)
+                # Optionally set step output (might be redundant if result is sent immediately after)
+                # step.output = translation_result 
+
+        # Send the final translation result
+        await cl.Message(
+            content=f"Translation: {translation_result}"
+        ).send()
             
     # Catch specific translation errors
     except TranslationError as e:

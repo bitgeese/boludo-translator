@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # --- Logging --- 
     LOG_LEVEL: str = "INFO"
 
+    # --- Debugging ---
+    DEBUG: bool = False # Set to True via env var to enable debug features like step visibility
+
 # Instantiate settings. Pydantic automatically loads and validates.
 try:
     settings = Settings()

@@ -8,6 +8,7 @@ It initializes and holds the core ArgentinianTranslator instance.
 import logging
 import pandas as pd
 from langchain_community.vectorstores import FAISS
+from langchain_core.runnables.config import RunnableConfig
 
 from core.translator import ArgentinianTranslator
 from core.prompt_manager import PromptManager
@@ -40,12 +41,14 @@ class TranslationService:
         )
         logger.info("TranslationService initialized successfully.")
 
-    async def translate_text(self, text: str) -> str:
+    async def translate_text(self, text: str, config: RunnableConfig = None) -> str:
         """
         Translates the given text using the underlying translator.
 
         Args:
             text: The input text to translate.
+            config: Optional RunnableConfig to pass down to the translator's 
+                    translate method (e.g., for callbacks).
 
         Returns:
             The translated text.
@@ -53,9 +56,9 @@ class TranslationService:
         Raises:
             RuntimeError: If the translation fails.
         """
-        logger.debug(f"TranslationService received request to translate: '{text[:50]}...'")
+        logger.debug(f"TranslationService received request to translate: '{text[:50]}...' with config: {config}")
         try:
-            translated_text = await self.translator.translate(text)
+            translated_text = await self.translator.translate(text, config=config)
             return translated_text
         except Exception as e:
             # Log the error originating from the translator

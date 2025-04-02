@@ -17,6 +17,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
+# Import RunnableConfig
+from langchain_core.runnables.config import RunnableConfig
 
 # Assuming PromptManager is correctly placed and importable after restructuring
 # If PromptManager was moved to core/, update the import accordingly.
@@ -126,12 +128,14 @@ class ArgentinianTranslator:
         logger.info("RAG chain built successfully.")
         return rag_chain
 
-    async def translate(self, input_text: str) -> str:
+    async def translate(self, input_text: str, config: RunnableConfig = None) -> str:
         """
         Translate input text to Argentinian Spanish using the RAG chain.
 
         Args:
             input_text: The text to translate.
+            config: Optional RunnableConfig to pass to the chain invocation, 
+                    e.g., for callbacks.
 
         Returns:
             The translated text as a string.
@@ -143,10 +147,10 @@ class ArgentinianTranslator:
             logger.warning("Translate called with empty input text.")
             return ""
             
-        logger.info(f"Translating text: '{input_text[:50]}...'" ) 
+        logger.info(f"Translating text: '{input_text[:50]}...' with config: {config}") 
         try:
-            # The chain expects a dictionary with the key "text"
-            result = await self.chain.ainvoke({"text": input_text})
+            # Pass the config to ainvoke
+            result = await self.chain.ainvoke({"text": input_text}, config=config) 
             logger.info("Translation successful.")
             return result
         except Exception as e:
