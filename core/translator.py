@@ -9,23 +9,25 @@ import logging
 from operator import itemgetter
 from typing import List
 
-import pandas as pd
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
-from langchain_openai import ChatOpenAI
-from langchain_community.vectorstores import FAISS
+
 # Import RunnableConfig
 from langchain_core.runnables.config import RunnableConfig
+from langchain_openai import ChatOpenAI
+
+# Import the settings object
+from config import settings
 
 # Assuming PromptManager is correctly placed and importable after restructuring
 # If PromptManager was moved to core/, update the import accordingly.
 # from core.prompt_manager import PromptManager
-from core.prompt_manager import PromptManager 
-# Import the settings object
-from config import settings 
+from core.prompt_manager import PromptManager
+
 # Import custom exception
 from .exceptions import TranslationError
 
@@ -62,12 +64,14 @@ class ArgentinianTranslator:
         if llm:
             self.llm = llm
         else:
-            logger.info(f"Initializing ChatOpenAI model: {settings.TRANSLATOR_MODEL_NAME}")
+            logger.info(
+                f"Initializing ChatOpenAI model: {settings.TRANSLATOR_MODEL_NAME}"
+            )
             self.llm = ChatOpenAI(
                 model=settings.TRANSLATOR_MODEL_NAME,
                 openai_api_key=settings.OPENAI_API_KEY,
                 temperature=settings.TRANSLATOR_TEMPERATURE,
-                streaming=True, # Enable streaming by default if needed later
+                streaming=True,  # Enable streaming by default if needed later
             )
 
         self.retriever = self._create_retriever()
@@ -95,13 +99,17 @@ class ArgentinianTranslator:
             )
             logger.debug("Loaded translation prompt template.")
         except AttributeError:
-             logger.error("Failed to load translation_prompt from PromptManager.")
-             # Raise specific error
-             raise TranslationError("Translation prompt template not found in PromptManager.")
+            logger.error("Failed to load translation_prompt from PromptManager.")
+            # Raise specific error
+            raise TranslationError(
+                "Translation prompt template not found in PromptManager."
+            )
         except Exception as e:
             logger.error(f"Error loading prompt template: {e}", exc_info=True)
             # Raise specific error
-            raise TranslationError(f"Failed to load translation prompt template: {e}") from e
+            raise TranslationError(
+                f"Failed to load translation prompt template: {e}"
+            ) from e
 
         # LCEL Chain Definition
         try:
@@ -110,21 +118,24 @@ class ArgentinianTranslator:
                     # Retrieve documents based on the input text ("text")
                     retrieved_docs=itemgetter("text") | self.retriever
                 ).assign(
-                    # Format the retrieved documents into the "reference_phrases" context variable
-                    reference_phrases=itemgetter("retrieved_docs") | RunnableLambda(self._format_retrieved_docs)
+                    # Format the retrieved documents into the
+                    # "reference_phrases" context variable
+                    reference_phrases=itemgetter("retrieved_docs")
+                    | RunnableLambda(self._format_retrieved_docs)
                 )
-                # Prepare the input for the prompt template (needs "text" and "reference_phrases")
-                | RunnablePassthrough.assign( # Ensure original 'text' is still available
+                # Prepare the input for the prompt template
+                # (needs "text" and "reference_phrases")
+                | RunnablePassthrough.assign(  # Ensure 'text' is available
                     text=itemgetter("text")
                 )
-                | translation_prompt_template # Apply the prompt template
-                | self.llm                   # Call the language model
-                | StrOutputParser()         # Parse the output to a string
+                | translation_prompt_template  # Apply the prompt template
+                | self.llm  # Call the language model
+                | StrOutputParser()  # Parse the output to a string
             )
         except Exception as e:
             logger.error(f"Error building the RAG chain: {e}", exc_info=True)
             raise TranslationError(f"Failed to build RAG chain: {e}") from e
-            
+
         logger.info("RAG chain built successfully.")
         return rag_chain
 
@@ -134,26 +145,28 @@ class ArgentinianTranslator:
 
         Args:
             input_text: The text to translate.
-            config: Optional RunnableConfig to pass to the chain invocation, 
+            config: Optional RunnableConfig to pass to the chain invocation,
                     e.g., for callbacks.
 
         Returns:
             The translated text as a string.
-        
+
         Raises:
             TranslationError: If the translation chain fails.
         """
         if not input_text:
             logger.warning("Translate called with empty input text.")
             return ""
-            
-        logger.info(f"Translating text: '{input_text[:50]}...' with config: {config}") 
+
+        logger.info(f"Translating text: '{input_text[:50]}...' with config: {config}")
         try:
             # Pass the config to ainvoke
-            result = await self.chain.ainvoke({"text": input_text}, config=config) 
+            result = await self.chain.ainvoke({"text": input_text}, config=config)
             logger.info("Translation successful.")
             return result
         except Exception as e:
-            logger.error(f"Error during translation chain invocation: {e}", exc_info=True)
+            logger.error(
+                f"Error during translation chain invocation: {e}", exc_info=True
+            )
             # Raise specific error
             raise TranslationError(f"Translation failed: {e}") from e
