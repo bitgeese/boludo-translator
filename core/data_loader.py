@@ -2,15 +2,17 @@
 Data Loading and Vector Store Creation Module
 
 This module provides functions to load Argentinian Spanish phrases from a CSV,
-process them into LangChain Documents, and create a FAISS vector store.
+VentureOut Spanish data from JSONL, process them into LangChain Documents,
+and create a vector store (FAISS or Chroma).
 """
 
 import logging
-from typing import List
+import os
+from typing import List, Union
 
 import pandas as pd
 from langchain.docstore.document import Document
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS, Chroma
 from langchain_openai import OpenAIEmbeddings
 
 # Import the settings object
@@ -18,6 +20,16 @@ from config import settings
 
 # Import custom exception
 from .exceptions import DataLoaderError
+
+# Import VentureOut data loader
+from .ventureout_loader import (
+    copy_ventureout_data_to_data_dir,
+    create_ventureout_documents,
+    load_ventureout_data,
+)
+
+# Type alias for vector stores
+VectorStore = Union[FAISS, Chroma]
 
 logger = logging.getLogger(__name__)
 
@@ -107,59 +119,128 @@ def _create_documents_from_dataframe(df: pd.DataFrame) -> List[Document]:
             # Add new fields to metadata as well for potential filtering later
             "register": str(row.get("Register", "Unknown")),
             "connotation": str(row.get("Connotation", "Unknown")),
+            "source": "phrases_csv",  # Add source to identify origin
+            "data_type": "phrase",  # Add type for potential filtering
         }
-        # Ensure all metadata values are strings for FAISS compatibility
+        # Ensure all metadata values are strings for vector store compatibility
         doc = Document(page_content=content.strip(), metadata=metadata)
         documents.append(doc)
-    logger.info(f"Created {len(documents)} documents from DataFrame.")
+    logger.info(f"Created {len(documents)} documents from CSV DataFrame.")
     return documents
 
 
-def _create_vector_store(documents: List[Document], api_key: str) -> FAISS:
-    """Creates a FAISS vector store from documents using OpenAI embeddings."""
+def _create_vector_store(documents: List[Document], api_key: str) -> VectorStore:
+    """Creates a vector store from documents using OpenAI embeddings."""
+    if not documents:
+        logger.error("No documents provided to create vector store.")
+        raise DataLoaderError("Cannot create vector store with empty documents list.")
     try:
         # Ensure api_key is passed explicitly for clarity
         embedding_model = OpenAIEmbeddings(openai_api_key=api_key)
-        vector_store = FAISS.from_documents(documents, embedding_model)
-        logger.info("Successfully created FAISS vector store.")
+
+        # Choose vector store type based on settings
+        if settings.VECTORSTORE_TYPE.upper() == "CHROMA":
+            # Ensure directory exists
+            os.makedirs(settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
+
+            vector_store = Chroma.from_documents(
+                documents=documents,
+                embedding=embedding_model,
+                persist_directory=settings.CHROMA_PERSIST_DIRECTORY,
+            )
+            # Persist to disk
+            vector_store.persist()
+            logger.info(
+                f"Successfully created Chroma vector store in "
+                f"{settings.CHROMA_PERSIST_DIRECTORY}."
+            )
+        else:
+            # Default to FAISS
+            vector_store = FAISS.from_documents(documents, embedding_model)
+            logger.info("Successfully created FAISS vector store.")
         return vector_store
     except Exception as e:
         logger.error(f"Failed to create vector store: {e}", exc_info=True)
         # Raise specific error
-        raise DataLoaderError(f"Failed to create FAISS vector store: {e}") from e
+        raise DataLoaderError(f"Failed to create vector store: {e}") from e
 
 
-def load_vector_store_and_data() -> FAISS:
+def load_vector_store_and_data() -> VectorStore:
     """
-    Loads data from the configured CSV, creates Documents, builds a FAISS
-    vector store, and returns the store.
+    Loads data from configured sources, creates Documents, builds a vector store,
+    and returns the store.
 
-    Uses configuration from the `config.settings` object.
+    Data sources include:
+    1. Phrases CSV - Always loaded
+    2. VentureOut JSONL - Loaded if USE_VENTUREOUT_DATA is True
 
     Returns:
-        The FAISS vector store.
+        The vector store (FAISS or Chroma based on settings).
 
     Raises:
         DataLoaderError: If any step in the loading or processing fails.
     """
-    logger.info(f"Starting data loading process from {settings.PHRASES_CSV_PATH}...")
+    logger.info("Starting data loading process...")
+    all_documents = []
+
     try:
+        # 1. Load and process phrases CSV (always required)
+        logger.info(f"Loading phrases from {settings.PHRASES_CSV_PATH}...")
         df = _load_data_from_csv(settings.PHRASES_CSV_PATH)
         if df.empty:
             raise DataLoaderError(
                 f"No data loaded from {settings.PHRASES_CSV_PATH}. Cannot proceed."
             )
 
-        documents = _create_documents_from_dataframe(df)
-        if not documents:
+        phrase_documents = _create_documents_from_dataframe(df)
+        if not phrase_documents:
             raise DataLoaderError(
-                "No documents were created from the DataFrame. Cannot proceed."
+                "No documents were created from the CSV DataFrame. Cannot proceed."
             )
 
-        vector_store = _create_vector_store(documents, settings.OPENAI_API_KEY)
+        all_documents.extend(phrase_documents)
+        logger.info(
+            f"Added {len(phrase_documents)} phrase documents to the collection."
+        )
+
+        # 2. Load and process VentureOut data if enabled
+        if settings.USE_VENTUREOUT_DATA:
+            # Try to copy data from data_scripts to data directory if needed
+            copy_ventureout_data_to_data_dir()
+
+            logger.info(
+                f"Loading VentureOut data from " f"{settings.VENTUREOUT_DATA_PATH}..."
+            )
+            try:
+                ventureout_data = load_ventureout_data(settings.VENTUREOUT_DATA_PATH)
+                ventureout_documents = create_ventureout_documents(ventureout_data)
+
+                if ventureout_documents:
+                    all_documents.extend(ventureout_documents)
+                    logger.info(
+                        f"Added {len(ventureout_documents)} VentureOut documents "
+                        f"to the collection."
+                    )
+                else:
+                    logger.warning(
+                        "No VentureOut documents were created. "
+                        "Continuing with phrases only."
+                    )
+            except DataLoaderError as e:
+                # Log but continue with phrases only
+                logger.warning(
+                    f"Failed to load VentureOut data: {e}. "
+                    f"Continuing with phrases only."
+                )
+
+        # 3. Create vector store from all documents
+        logger.info(
+            f"Creating vector store with {len(all_documents)} total documents..."
+        )
+        vector_store = _create_vector_store(all_documents, settings.OPENAI_API_KEY)
 
         logger.info("Data loading and vector store creation complete.")
-        # Return only the vector store
+        # Return the vector store
         return vector_store
     except DataLoaderError:  # Re-raise specific errors
         raise

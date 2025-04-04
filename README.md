@@ -6,9 +6,11 @@ An interactive web application that translates English or Spanish text into auth
 
 - **Natural Language Translation**: Converts standard English/Spanish to authentic Argentinian Spanish.
 - **Smart Language Detection**: Automatically detects input language (English/Spanish). Uses LLM for short inputs and a faster statistical model for longer inputs.
-- **Context-Aware Translations**: Leverages RAG with a curated database of Argentinian expressions and slang.
+- **Context-Aware Translations**: Leverages RAG with multiple data sources for authentic results:
+  - **Phrase Database**: Curated collection of Argentinian expressions and slang
+  - **VentureOut Spanish Content**: Articles and lessons about Rioplatense Spanish
 - **Interactive Web UI**: Clean interface powered by Chainlit.
-- **Vector Search**: Employs FAISS for efficient semantic search of relevant Argentinian expressions.
+- **Vector Search**: Employs FAISS or Chroma for efficient semantic search of relevant context.
 - **Prompt Management**: Centralized and easy-to-edit prompts.
 - **Configurable**: Settings managed via `config.py` and `.env`.
 
@@ -16,7 +18,7 @@ An interactive web application that translates English or Spanish text into auth
 
 - **LangChain**: LLM orchestration, RAG implementation, prompt management.
 - **OpenAI**: Core LLM for translation and language detection.
-- **FAISS**: Efficient vector similarity search.
+- **FAISS/Chroma**: Efficient vector similarity search.
 - **Langdetect**: Statistical language detection for longer texts.
 - **Chainlit**: Interactive web UI framework.
 - **PDM**: Python dependency management.
@@ -57,15 +59,25 @@ pdm run chainlit run app.py -w # The -w flag enables auto-reload on code changes
 
 The application will typically be available at `http://localhost:8000`.
 
-## 📊 Data Structure
+## 📊 Data Sources
 
-The application uses a CSV file (`data/phrases.csv`) containing Argentinian expressions. The expected columns are:
+The application uses multiple data sources for context-aware translations:
+
+### 1. Phrase Database (CSV)
+Located at `data/phrases.csv` containing Argentinian expressions. The expected columns are:
 
 - `Original Phrase/Word`: The standard English or Spanish phrase.
 - `Argentinian Equivalent`: The Argentinian Spanish version.
 - `Explanation (Context/Usage)`: Guidance on when and how to use the expression.
 - `Region Specificity` (Optional): Where in Argentina the expression is commonly used.
 - `Level of Formality` (Optional): E.g., formal, casual, slang.
+
+### 2. VentureOut Spanish Content (JSONL)
+Located at `data/ventureout_data.jsonl` containing articles and lessons about Rioplatense Spanish from [VentureOut Spanish](https://ventureoutspanish.com/).
+
+- Content is scraped and cleaned using scripts in the `data_scripts/` directory
+- Each record contains the URL, title, and cleaned content
+- Provides rich context about Argentinian Spanish usage
 
 ## 🧩 Project Structure
 
@@ -75,12 +87,17 @@ arg-translator/
 ├── .venv/                 # Virtual environment (managed by PDM)
 ├── core/                  # Core logic (RAG, data loading, prompts)
 │   ├── __init__.py
-│   ├── data_loader.py     # Loads CSV, creates Documents & vector store
+│   ├── data_loader.py     # Loads CSV, JSONL, creates vector store
+│   ├── ventureout_loader.py # Handles VentureOut Spanish data
 │   ├── exceptions.py      # Custom exception classes
 │   ├── prompt_manager.py  # Loads prompt templates from files
 │   └── translator.py      # Core LangChain RAG translation logic
 ├── data/                  # Data files used by the application
-│   └── phrases.csv        # Database of Argentinian expressions
+│   ├── phrases.csv        # Database of Argentinian expressions
+│   └── ventureout_data.jsonl # VentureOut Spanish content
+├── data_scripts/          # Scripts for data collection and processing
+│   ├── scrape_ventureout.py  # Website scraper for VentureOut
+│   └── README.md          # Documentation for data scripts
 ├── prompts/               # Directory for prompt markdown files
 │   ├── system.md          # System prompt for the translator
 │   └── translation.md     # Translation prompt template
@@ -135,3 +152,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - The [Chainlit](https://chainlit.io/) team for the excellent UI framework.
 - The [LangChain](https://www.langchain.com/) community for their powerful tools.
 - OpenAI for the underlying language models.
+- [VentureOut Spanish](https://ventureoutspanish.com/) for their valuable content on Rioplatense Spanish.

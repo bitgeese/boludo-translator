@@ -25,6 +25,18 @@ class Settings(BaseSettings):
 
     # --- Data Configuration ---
     PHRASES_CSV_PATH: str = "data/phrases.csv"
+    # New settings for VentureOut data
+    VENTUREOUT_DATA_PATH: str = "data/ventureout_data.jsonl"
+    USE_VENTUREOUT_DATA: bool = True
+
+    # --- Vector Store Configuration ---
+    VECTORSTORE_TYPE: str = "CHROMA"  # Options: FAISS or CHROMA
+    # Chroma is set as default because:
+    # 1. Provides persistent storage by default, preserving embeddings between restarts
+    # 2. Better support for metadata filtering (by source, region, etc.)
+    # 3. Dataset size is moderate (phrases + VentureOut content < 1MB)
+    # 4. More user-friendly for development with automatic persistence
+    CHROMA_PERSIST_DIRECTORY: str = "chroma_db"
 
     # --- Prompt Configuration ---
     PROMPTS_DIR: str = "prompts"

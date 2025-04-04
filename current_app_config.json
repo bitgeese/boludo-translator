@@ -1,0 +1,171 @@
+{
+  "id": "/subscriptions/ff8863b5-35d8-4a29-80fd-16293df39b03/resourceGroups/WebDevEu/providers/Microsoft.App/containerapps/chegpt",
+  "identity": {
+    "type": "None"
+  },
+  "location": "Poland Central",
+  "name": "chegpt",
+  "properties": {
+    "configuration": {
+      "activeRevisionsMode": "Single",
+      "dapr": null,
+      "ingress": {
+        "additionalPortMappings": null,
+        "allowInsecure": false,
+        "clientCertificateMode": null,
+        "corsPolicy": null,
+        "customDomains": null,
+        "exposedPort": 0,
+        "external": true,
+        "fqdn": "chegpt.braveforest-c93400a4.polandcentral.azurecontainerapps.io",
+        "ipSecurityRestrictions": null,
+        "stickySessions": null,
+        "targetPort": 8000,
+        "traffic": [
+          {
+            "latestRevision": true,
+            "weight": 100
+          }
+        ],
+        "transport": "Auto"
+      },
+      "maxInactiveRevisions": 100,
+      "registries": [
+        {
+          "identity": "",
+          "passwordSecretRef": "framdevregistryazurecrio-framdevregistry",
+          "server": "framdevregistry.azurecr.io",
+          "username": "framdevregistry"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "framdevregistryazurecrio-framdevregistry"
+        },
+        {
+          "name": "openai-api-key"
+        },
+        {
+          "name": "literal-api-key"
+        },
+        {
+          "name": "chainlit-auth-secret"
+        },
+        {
+          "name": "debug"
+        }
+      ],
+      "service": null
+    },
+    "customDomainVerificationId": "DC35170D5A4193C9BAD9ECB3B7595BD097A536147DC981E7C571E5CE9EE306A2",
+    "delegatedIdentities": [],
+    "environmentId": "/subscriptions/ff8863b5-35d8-4a29-80fd-16293df39b03/resourceGroups/WebDevEu/providers/Microsoft.App/managedEnvironments/CheGPT-env",
+    "eventStreamEndpoint": "https://polandcentral.azurecontainerapps.dev/subscriptions/ff8863b5-35d8-4a29-80fd-16293df39b03/resourceGroups/WebDevEu/containerApps/chegpt/eventstream",
+    "latestReadyRevisionName": "chegpt--scnh3oe",
+    "latestRevisionFqdn": "chegpt--scnh3oe.braveforest-c93400a4.polandcentral.azurecontainerapps.io",
+    "latestRevisionName": "chegpt--scnh3oe",
+    "managedEnvironmentId": "/subscriptions/ff8863b5-35d8-4a29-80fd-16293df39b03/resourceGroups/WebDevEu/providers/Microsoft.App/managedEnvironments/CheGPT-env",
+    "outboundIpAddresses": [
+      "20.215.81.159",
+      "20.215.81.156",
+      "20.215.182.193",
+      "20.215.81.105",
+      "74.248.74.131",
+      "74.248.75.84",
+      "74.248.75.80",
+      "74.248.75.40",
+      "74.248.75.66",
+      "74.248.74.204",
+      "74.248.74.27",
+      "74.248.74.235",
+      "74.248.74.229",
+      "74.248.74.233",
+      "74.248.73.78",
+      "74.248.73.71",
+      "74.248.72.54",
+      "74.248.73.137",
+      "74.248.73.92",
+      "74.248.73.84",
+      "20.215.80.236",
+      "20.215.180.245",
+      "20.215.81.58",
+      "20.215.81.15",
+      "74.248.75.25",
+      "74.248.75.13",
+      "74.248.74.165",
+      "74.248.75.10",
+      "74.248.72.3",
+      "74.248.72.101",
+      "74.248.248.179"
+    ],
+    "provisioningState": "Succeeded",
+    "runningStatus": "Running",
+    "template": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "OPENAI_API_KEY",
+              "secretRef": "openai-api-key"
+            },
+            {
+              "name": "LITERAL_API_KEY",
+              "secretRef": "literal-api-key"
+            },
+            {
+              "name": "CHAINLIT_AUTH_SECRET",
+              "secretRef": "chainlit-auth-secret"
+            },
+            {
+              "name": "DEBUG",
+              "value": "False"
+            }
+          ],
+          "image": "framdevregistry.azurecr.io/chegpt:latest",
+          "name": "chegpt",
+          "resources": {
+            "cpu": 0.5,
+            "ephemeralStorage": "2Gi",
+            "memory": "1Gi"
+          },
+          "probes": [
+            {
+              "type": "Startup",
+              "httpGet": {
+                "path": "/",
+                "port": 8000,
+                "scheme": "HTTP"
+              },
+              "initialDelaySeconds": 60,
+              "periodSeconds": 15,
+              "failureThreshold": 10,
+              "timeoutSeconds": 10,
+              "successThreshold": 1
+            }
+          ]
+        }
+      ],
+      "initContainers": null,
+      "revisionSuffix": "",
+      "scale": {
+        "maxReplicas": 10,
+        "minReplicas": null,
+        "rules": null
+      },
+      "serviceBinds": null,
+      "terminationGracePeriodSeconds": null,
+      "volumes": null
+    },
+    "workloadProfileName": "Consumption"
+  },
+  "resourceGroup": "WebDevEu",
+  "systemData": {
+    "createdAt": "2025-04-02T16:49:47.4838806",
+    "createdBy": "maciej.janowski1@icloud.com",
+    "createdByType": "User",
+    "lastModifiedAt": "2025-04-02T16:52:10.7233179",
+    "lastModifiedBy": "maciej.janowski1@icloud.com",
+    "lastModifiedByType": "User"
+  },
+  "type": "Microsoft.App/containerApps"
+}
