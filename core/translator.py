@@ -16,20 +16,12 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
-
-# Import RunnableConfig
 from langchain_core.runnables.config import RunnableConfig
 from langchain_openai import ChatOpenAI
 
-# Import the settings object
 from config import settings
-
-# Assuming PromptManager is correctly placed and importable after restructuring
-# If PromptManager was moved to core/, update the import accordingly.
-# from core.prompt_manager import PromptManager
 from core.prompt_manager import PromptManager
 
-# Import custom exception
 from .exceptions import TranslationError
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:17da6ac8620bf3667516baa7acfe570d21a058275344528871e041e9be5873cb"
+content_hash = "sha256:b311549e46b3aed49f3bb66cc4fc017d789035e3db348c70656c7c8c055e0255"
 
 [[metadata.targets]]
 requires_python = "==3.12.*"
@@ -1300,6 +1300,22 @@ groups = ["default"]
 files = [
     {file = "Lazify-0.4.0-py2.py3-none-any.whl", hash = "sha256:c2c17a7a33e9406897e3f66fde4cd3f84716218d580330e5af10cfe5a0cd195a"},
     {file = "Lazify-0.4.0.tar.gz", hash = "sha256:7102bfe63e56de2ab62b3bc661a7190c4056771a8624f04a8b785275c3dd1f9b"},
+]
+
+[[package]]
+name = "limits"
+version = "4.6"
+requires_python = ">=3.10"
+summary = "Rate limiting utilities"
+groups = ["default"]
+dependencies = [
+    "deprecated>=1.2",
+    "packaging<25,>=21",
+    "typing-extensions",
+]
+files = [
+    {file = "limits-4.6-py3-none-any.whl", hash = "sha256:b359ba1318d67c1750024dab2704400aabf2db77bf91a0238761a5e9133f6cb1"},
+    {file = "limits-4.6.tar.gz", hash = "sha256:d1586455e36235909fada4114a4b8a1438feab1f2dd60adac2cacb12b0fb756c"},
 ]
 
 [[package]]
@@ -3014,6 +3030,20 @@ groups = ["default"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
+]
+
+[[package]]
+name = "slowapi"
+version = "0.1.9"
+requires_python = ">=3.7,<4.0"
+summary = "A rate limiting extension for Starlette and Fastapi"
+groups = ["default"]
+dependencies = [
+    "limits>=2.3",
+]
+files = [
+    {file = "slowapi-0.1.9-py3-none-any.whl", hash = "sha256:cfad116cfb84ad9d763ee155c1e5c5cbf00b0d47399a769b227865f5df576e36"},
+    {file = "slowapi-0.1.9.tar.gz", hash = "sha256:639192d0f1ca01b1c6d95bf6c71d794c3a9ee189855337b4821f7f457dddad77"},
 ]
 
 [[package]]
