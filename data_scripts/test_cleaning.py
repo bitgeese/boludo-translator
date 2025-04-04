@@ -5,8 +5,24 @@ This loads a few samples from ventureout_data.jsonl and shows the before/after c
 """
 
 import json
+import os
+import sys
 
-from embed_data import clean_text  # Import the clean_text function from embed_data.py
+# Add parent directory to path to be able to import from core
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from core.text_utils import clean_text
+except ImportError:
+    # If import fails, show a helpful error message
+    print(
+        "Failed to import text_utils from core. This script should be run from "
+        "the project root directory or with the project root in PYTHONPATH."
+    )
+
+    # Define a fallback clean_text function if import fails
+    def clean_text(text, min_content_length=10):
+        """Fallback function if text_utils cannot be imported"""
+        return text.strip()
 
 
 def main():
@@ -30,7 +46,7 @@ def main():
         # Process each sample
         for i, sample in enumerate(samples):
             original_text = sample["text"]
-            cleaned_text = clean_text(original_text)
+            cleaned_text = clean_text(original_text, min_content_length=100)
 
             print(f"\n--- DOCUMENT {i + 1}: {sample['title']} ---")
             print(f"URL: {sample['url']}")

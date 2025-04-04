@@ -1,20 +1,48 @@
 """
-Data Loading and Vector Store Creation Module
+Data Loading and Vector Store Creation Module for Argentine Spanish Learning RAG System
 
-This module provides functions to load Argentinian Spanish phrases from a CSV,
-VentureOut Spanish data from JSONL, process them into LangChain Documents,
-and create a vector store (FAISS or Chroma).
+This module serves as the central data processing hub for the RAG system,
+responsible for loading, processing, and vectorizing content from multiple data sources.
+
+Key Capabilities:
+- Loading structured data from CSV files containing Argentine Spanish phrases
+- Loading content from VentureOut Spanish blog (via JSONL format)
+- Converting raw data into LangChain Document objects with appropriate metadata
+- Creating and managing vector stores (FAISS or Chroma) based on configuration
+- Providing a unified interface for retrieving vectorized data
+
+The module abstracts away the complexities of data source management, allowing
+the application to seamlessly work with multiple content types. It handles
+validation, error management, and appropriate data transformations to ensure
+consistent document structure for vector embedding.
+
+Usage:
+    from core.data_loader import load_vector_store_and_data
+
+    # Load all configured data sources and create vector store
+    vector_store = load_vector_store_and_data()
+
+    # Perform similarity search
+    results = vector_store.similarity_search("What is Lunfardo?", k=3)
+
+    # Access retrieved documents
+    for doc in results:
+        print(f"Source: {doc.metadata.get('source')}")
+        print(doc.page_content)
 """
 
+# Standard library imports
 import logging
 import os
 from typing import List, Union
 
+# Third-party library imports
 import pandas as pd
-from langchain.docstore.document import Document
 from langchain_community.vectorstores import FAISS, Chroma
+from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
+# Local application imports
 # Import the settings object
 from config import settings
 
@@ -209,7 +237,7 @@ def load_vector_store_and_data() -> VectorStore:
             copy_ventureout_data_to_data_dir()
 
             logger.info(
-                f"Loading VentureOut data from " f"{settings.VENTUREOUT_DATA_PATH}..."
+                f"Loading VentureOut data from {settings.VENTUREOUT_DATA_PATH}..."
             )
             try:
                 ventureout_data = load_ventureout_data(settings.VENTUREOUT_DATA_PATH)

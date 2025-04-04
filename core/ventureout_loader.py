@@ -1,112 +1,65 @@
 """
-VentureOut Data Loading Module
+VentureOut Data Loading Module for Argentine Spanish Learning RAG System
 
-This module provides functions to load VentureOut Spanish data from a JSONL file,
-clean the content, and process it into LangChain Documents.
+This specialized module handles the loading, processing, and transformation
+of web-scraped content from the VentureOut Spanish blog into structured
+document format suitable for vector embedding.
+
+Key Capabilities:
+- Loading raw scraped data from JSONL files
+- Applying advanced text cleaning to remove boilerplate content
+- Processing metadata for improved retrieval relevance
+- Converting cleaned data into LangChain Document objects
+- Managing data file synchronization between directories
+
+The module serves as a data adapter between the raw scraped content and
+the structured format required by the vector store, ensuring that content
+is properly cleaned and enriched with metadata before being made available
+for retrieval.
+
+Usage:
+    from core.ventureout_loader import load_ventureout_data, create_ventureout_documents
+
+    # Load and clean raw data
+    data = load_ventureout_data("path/to/ventureout_data.jsonl")
+
+    # Convert to Document objects
+    documents = create_ventureout_documents(data)
 """
 
+# Standard library imports
 import json
 import logging
 import os
-import re
 from typing import Any, Dict, List
 
-from langchain.docstore.document import Document
+# Third-party library imports
+# Update to use the new LangChain import
+from langchain_core.documents import Document
 
+# Local application imports
 # Import custom exception
 from .exceptions import DataLoaderError
 
+# Import text utilities
+from .text_utils import clean_text
+
 logger = logging.getLogger(__name__)
-
-# Common patterns to remove from the text content for cleaning
-PATTERNS_TO_REMOVE = [
-    # Comment form and related elements
-    r"Leave a Reply\s*Cancel reply.*?for the next time I comment\.",
-    r"Comment\s*Enter your name.*?for the next time I comment\.",
-    r"Enter your name or username to comment.*?for the next time I comment\.",
-    # WordPress footer elements and metadata
-    r"Copyright © \d{4}.*?All rights reserved\.?",
-    r"Post author:\s*.*?\s*Post published:\s*.*?\s*Reading time:\s*.*?\s*",
-    r"Thank you for sharing this post!\s*Share this content\s*Opens in a new window\s*",
-    # Navigation elements
-    r"Previous Post.*?Next Post",
-    # Social sharing
-    r"Share this:.*?Click to share",
-    r"Share this content.*?Opens in a new window",
-    # Search prompts
-    r"Search for:.*?search",
-    # Category and tag listings at the end of posts
-    r"Categories.*?\(\d+\).*?Spanish Teaching.*?\(\d+\)",
-    r"\(\d+\)\s*Argentinian Spanish\s*\(\d+\)\s*Argentinian Spanish Curse Words"
-    r"\s*\(\d+\)",
-    # Common footer text
-    r"Venture Out Spanish\s*·\s*\S+\s*\S+\s*·\s*Privacy Policy",
-    # Author bio section
-    r"About the author.*?View all posts",
-    # Comment section headers
-    r"Comments\s*\(\d+\)",
-    # WordPress tags
-    r"Filed under:.*?Tags:",
-    # Post metadata block
-    r"Post author:.*?Reading time:.*?read",
-    # Share buttons
-    r"Opens in a new window\s*Opens in a new window\s*Opens in a new window",
-]
-
-
-def clean_ventureout_text(text: str) -> str:
-    """Clean up text content by removing common boilerplate elements."""
-    # First, remove any identified patterns
-    for pattern in PATTERNS_TO_REMOVE:
-        text = re.sub(pattern, "", text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Split text at common ending points
-    split_points = [
-        "Leave a Reply",
-        "Related Posts",
-        "Categories",
-        "Thank you for sharing this post",
-        "Post navigation",
-    ]
-
-    for point in split_points:
-        if point in text:
-            text = text.split(point)[0]
-
-    # Remove category listings (common at the end of posts)
-    lines = text.splitlines()
-    filtered_lines = []
-    skip_mode = False
-    category_pattern = re.compile(r"^\s*\(\d+\)\s*$")
-
-    for line in lines:
-        # If line is like "(45)" - part of category listings - enter skip mode
-        if category_pattern.match(line):
-            skip_mode = True
-
-        # If we're not in skip mode, keep the line
-        if not skip_mode:
-            filtered_lines.append(line)
-
-        # If we encounter a long line after categories, exit skip mode
-        if skip_mode and len(line.strip()) > 30:
-            skip_mode = False
-
-    # Rejoin the filtered lines
-    text = "\n".join(filtered_lines)
-
-    # Remove excessive whitespace
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"\s{2,}", " ", text)
-
-    # Remove any URLs that might be in the text
-    text = re.sub(r"https?://\S+", "", text)
-
-    return text.strip()
 
 
 def load_ventureout_data(file_path: str) -> List[Dict[str, Any]]:
-    """Load data from JSONL file and apply cleaning."""
+    """
+    Load data from JSONL file and apply cleaning.
+
+    Args:
+        file_path: Path to the JSONL file with VentureOut data
+
+    Returns:
+        List of dictionaries containing cleaned data
+
+    Raises:
+        DataLoaderError: If the file cannot be found or data cannot be loaded
+    """
     logger.info(f"Loading and cleaning VentureOut data from {file_path}")
     documents = []
     processed_count = 0
@@ -118,13 +71,13 @@ def load_ventureout_data(file_path: str) -> List[Dict[str, Any]]:
                 if line.strip():
                     try:
                         doc = json.loads(line)
-                        cleaned_text = clean_ventureout_text(doc["text"])
+                        cleaned_text = clean_text(doc["text"], min_content_length=100)
 
                         # Skip documents with minimal content
-                        if len(cleaned_text) < 100:
+                        # (function returns placeholder for short content)
+                        if cleaned_text == "No usable content found.":
                             logger.debug(
-                                f"Skipping document with minimal content: "
-                                f"{doc['url']}"
+                                f"Skipping document with minimal content: {doc['url']}"
                             )
                             skipped_count += 1
                             continue
@@ -156,7 +109,15 @@ def load_ventureout_data(file_path: str) -> List[Dict[str, Any]]:
 
 
 def create_ventureout_documents(data: List[Dict[str, Any]]) -> List[Document]:
-    """Convert VentureOut data into LangChain Document objects."""
+    """
+    Convert VentureOut data into LangChain Document objects.
+
+    Args:
+        data: List of dictionaries containing VentureOut data with cleaned text
+
+    Returns:
+        List of LangChain Document objects
+    """
     documents = []
     for item in data:
         # Create meaningful content with title and text
@@ -188,6 +149,9 @@ def copy_ventureout_data_to_data_dir():
     """
     Copy ventureout_data.jsonl from data_scripts to data directory if it exists.
     This ensures the data is in the expected location for the app to use.
+
+    Returns:
+        bool: True if copy was successful or not needed, False if copy failed
     """
     source_path = "data_scripts/ventureout_data.jsonl"
     target_path = "data/ventureout_data.jsonl"
