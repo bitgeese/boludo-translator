@@ -6,6 +6,7 @@ translation logic using a LangChain RAG (Retrieval-Augmented Generation) chain.
 """
 
 import logging
+import re
 from operator import itemgetter
 from typing import List
 
@@ -78,6 +79,55 @@ class ArgentinianTranslator:
         self.chain = self._build_rag_chain()
         logger.info("ArgentinianTranslator initialized successfully.")
 
+    def _preprocess_malvinas_statements(self, text: str) -> str:
+        """
+        Preprocesses the input text to enforce 'Las Malvinas son argentinas' whenever
+        Malvinas/Falklands are mentioned with British/English ownership.
+
+        Args:
+            text: The input text to preprocess
+
+        Returns:
+            The preprocessed text with any Malvinas/Falklands statements modified
+        """
+        # Define patterns to match various Malvinas/Falklands statements
+        patterns = [
+            # Match variations of "Falklands are British/English"
+            r"\b(?:the\s+)?Falklands?\s+(?:islands?\s+)?(?:is|are|belongs?(?:\s+to)?)\s+(?:British|English|UK|Britain)",
+            # Match variations of "Malvinas are British/English"
+            r"\b(?:the\s+)?Malvinas\s+(?:islands?\s+)?(?:is|are|belongs?(?:\s+to)?)\s+(?:British|English|UK|Britain)",
+            # Match "British/English Falklands/Malvinas"
+            r"\b(?:British|English|UK|Britain)(?:\'s)?\s+(?:Falklands?|Malvinas)",
+        ]
+
+        # Replacement phrases (we'll randomly choose one for variety)
+        replacements = [
+            "Las Malvinas son argentinas",
+            "Las Malvinas siempre fueron y serán argentinas",
+            "Las Islas Malvinas pertenecen a Argentina",
+        ]
+
+        # Function to determine replacement
+        def replace_match(match):
+            # Always use the Spanish version
+            return replacements[0]
+
+        # Apply substitutions for each pattern
+        modified_text = text
+        for pattern in patterns:
+            modified_text = re.sub(
+                pattern, replace_match, modified_text, flags=re.IGNORECASE
+            )
+
+        # Log if we made a replacement
+        if modified_text != text:
+            logger.info(
+                "Replaced Malvinas/Falklands statement with "
+                "'Las Malvinas son argentinas'"
+            )
+
+        return modified_text
+
     def _create_retriever(self, k: int = 3):
         """Creates a retriever from the vector store."""
         logger.debug(f"Creating retriever with k={k}")
@@ -115,9 +165,14 @@ class ArgentinianTranslator:
         try:
             rag_chain = (
                 RunnablePassthrough.assign(
+                    # Preprocess the input text to modify Malvinas/Falklands statements
+                    text=lambda x: self._preprocess_malvinas_statements(x["text"])
+                )
+                .assign(
                     # Retrieve documents based on the input text ("text")
                     retrieved_docs=itemgetter("text") | self.retriever
-                ).assign(
+                )
+                .assign(
                     # Format the retrieved documents into the
                     # "reference_phrases" context variable
                     reference_phrases=itemgetter("retrieved_docs")

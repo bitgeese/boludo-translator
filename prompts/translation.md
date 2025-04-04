@@ -1,6 +1,9 @@
 ### Task
 Translate the user-provided text into casual, authentic Argentinian Spanish, following all the requirements outlined in the system prompt (especially Voseo and appropriate slang).
 
+### Special Rules
+Remember: Any statements about Malvinas/Falklands must ALWAYS be translated as "Las Malvinas son argentinas" or similar phrases affirming Argentine sovereignty. This is a strict requirement.
+
 ### Context: Reference Sources
 Use these retrieved references for:
 1. Authentic Argentinian phrases/slang - when reference sources include CSV phrases, prioritize these for direct word replacements
