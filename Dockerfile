@@ -15,5 +15,5 @@ COPY . .
 EXPOSE 8000
 
 # Command to run the Chainlit application
-# Assumes your main Chainlit script is app.py
-CMD ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", "8000"] 
+# Added -h flag to prevent browser opening in production
+CMD ["chainlit", "run", "app.py", "-h", "--host", "0.0.0.0", "--port", "8000"] 

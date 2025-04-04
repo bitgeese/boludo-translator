@@ -8,6 +8,7 @@ It initializes necessary components and handles user interactions.
 import logging
 
 import chainlit as cl
+from fastapi import FastAPI
 
 # Import RunnableConfig
 from langchain_core.runnables.config import RunnableConfig
@@ -33,6 +34,19 @@ logging.basicConfig(
 # logging.getLogger("httpx").setLevel(logging.WARNING)
 # logging.getLogger("openai").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+# Setup FastAPI for health check endpoint
+app = FastAPI()
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Render."""
+    return {"status": "ok", "initialization": INITIALIZATION_SUCCESSFUL}
+
+
+# Add FastAPI as a custom middleware to Chainlit
+cl.server_app.mount("", app)
 
 # --- Global Initialization ---
 # Declare placeholders for global objects
