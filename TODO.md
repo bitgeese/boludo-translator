@@ -1,3 +1,0 @@
-- [ ] deploy to digital ocean
-- [ ] add portugese (br) support
-- [ ] add bonus step "malvinas are british" "Las Malvinas son argentinas",
