@@ -14,6 +14,5 @@ COPY . .
 # Expose the port the app runs on
 EXPOSE 8000
 
-# Command to run the Chainlit application
-# Added -h flag to prevent browser opening in production
-CMD ["chainlit", "run", "app.py", "-h", "--host", "0.0.0.0", "--port", "8000"] 
+# Command to run the FastAPI application with Chainlit mounted
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
