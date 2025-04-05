@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # --- Translator Configuration ---
     TRANSLATOR_MODEL_NAME: str = "gpt-4o"
-    TRANSLATOR_TEMPERATURE: float = 0.7
+    TRANSLATOR_TEMPERATURE: float = 0.9
 
     # --- Language Detection Configuration ---
     SHORT_INPUT_WORD_THRESHOLD: int = 2  # Use LLM if word count <= this

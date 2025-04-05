@@ -2,22 +2,18 @@
 Argentinian Spanish Translator Core Module
 
 This module defines the ArgentinianTranslator class, responsible for the core
-translation logic using a LangChain RAG (Retrieval-Augmented Generation) chain.
+translation logic using a LlamaIndex RAG (Retrieval-Augmented Generation) system.
 """
 
 import logging
 import re
-from operator import itemgetter
-from typing import List
+from typing import List, Optional
 
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
-from langchain_core.language_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
-from langchain_core.runnables.config import RunnableConfig
-from langchain_openai import ChatOpenAI
+from llama_index.core import VectorStoreIndex
+from llama_index.core.prompts import PromptTemplate
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.schema import NodeWithScore
+from llama_index.llms.openai import OpenAI
 
 from config import settings
 from core.prompt_manager import PromptManager
@@ -31,45 +27,42 @@ class ArgentinianTranslator:
     """
     Service for translating text to authentic Argentinian Spanish using RAG.
 
-    This class uses a vector store of Argentinian phrases to retrieve relevant context
+    This class uses a vector index of Argentinian phrases to retrieve relevant context
     and combines it with the input text in a prompt for an LLM to generate
     context-aware translations.
     """
 
     def __init__(
         self,
-        vector_store: FAISS,
+        vector_index: VectorStoreIndex,
         prompt_manager: PromptManager,
-        llm: BaseChatModel = None,
+        llm: Optional[OpenAI] = None,
     ):
         """
         Initialize the translator.
 
         Args:
-            vector_store: Initialized FAISS vector store for phrase retrieval.
+            vector_index: Initialized VectorStoreIndex for phrase retrieval.
             prompt_manager: Initialized PromptManager to load prompt templates.
-            llm: Optional LangChain BaseChatModel instance. If None, initializes
-                 ChatOpenAI with settings from config.
+            llm: Optional LlamaIndex OpenAI LLM instance. If None, initializes
+                 OpenAI with settings from config.
         """
-        self.vector_store = vector_store
+        self.vector_index = vector_index
         self.prompt_manager = prompt_manager
 
         if llm:
             self.llm = llm
         else:
-            logger.info(
-                f"Initializing ChatOpenAI model: {settings.TRANSLATOR_MODEL_NAME}"
-            )
-            self.llm = ChatOpenAI(
+            logger.info(f"Initializing OpenAI model: {settings.TRANSLATOR_MODEL_NAME}")
+            self.llm = OpenAI(
                 model=settings.TRANSLATOR_MODEL_NAME,
-                openai_api_key=settings.OPENAI_API_KEY,
+                api_key=settings.OPENAI_API_KEY,
                 temperature=settings.TRANSLATOR_TEMPERATURE,
-                streaming=True,  # Enable streaming by default if needed later
             )
 
         # Create retriever with configured number of documents to limit memory usage
         self.retriever = self._create_retriever(k=settings.MAX_RETRIEVAL_DOCS)
-        self.chain = self._build_rag_chain()
+        self.query_engine = self._build_query_engine()
         logger.info("ArgentinianTranslator initialized successfully.")
 
     def _preprocess_malvinas_statements(self, text: str) -> str:
@@ -122,34 +115,32 @@ class ArgentinianTranslator:
         return modified_text
 
     def _create_retriever(self, k: int = 3):
-        """Creates a retriever from the vector store."""
+        """Creates a retriever from the vector index."""
         logger.debug(f"Creating retriever with k={k}")
         # Add memory management for retrieval
-        return self.vector_store.as_retriever(
-            search_kwargs={
-                "k": k,
-                # Limit fetch size to reduce memory usage
-                "fetch_k": k * 3,
-                # Use more efficient MMR retrieval
-                # that removes duplicates to save memory
-                "search_type": "mmr",
-                "lambda_mult": 0.8,  # Controls diversity (higher = more diversity)
-            }
+        return self.vector_index.as_retriever(
+            similarity_top_k=k,
+            vector_store_query_mode="mmr",  # Use MMR retrieval for diversity
+            mmr_threshold=0.8,  # Controls diversity (higher = more diversity)
         )
 
-    def _format_retrieved_docs(self, docs: List[Document]) -> str:
-        """Formats retrieved documents into a string for the prompt context."""
-        if not docs:
+    def _format_retrieved_docs(self, nodes: List[NodeWithScore]) -> str:
+        """Formats retrieved nodes into a string for the prompt context."""
+        if not nodes:
             return "No specific Argentinian expressions found as reference."
         # Using a clear separator for readability in the prompt
-        return "\n---\n".join([doc.page_content.strip() for doc in docs])
+        return "\n---\n".join([node.node.text.strip() for node in nodes])
 
-    def _build_rag_chain(self):
-        """Builds the LangChain Expression Language (LCEL) RAG chain."""
-        logger.debug("Building RAG chain...")
+    def _build_query_engine(self):
+        """Builds the LlamaIndex Query Engine."""
+        logger.debug("Building query engine...")
         try:
-            translation_prompt_template = ChatPromptTemplate.from_template(
-                self.prompt_manager.translation_prompt
+            # Load translation prompt template from the PromptManager
+            translation_prompt_text = self.prompt_manager.translation_prompt
+
+            # Create a LlamaIndex PromptTemplate
+            translation_prompt_template = PromptTemplate(
+                template=translation_prompt_text
             )
             logger.debug("Loaded translation prompt template.")
         except AttributeError:
@@ -165,67 +156,63 @@ class ArgentinianTranslator:
                 f"Failed to load translation prompt template: {e}"
             ) from e
 
-        # LCEL Chain Definition
+        # Query Engine Definition
         try:
-            rag_chain = (
-                RunnablePassthrough.assign(
-                    # Preprocess the input text to modify Malvinas/Falklands statements
-                    text=lambda x: self._preprocess_malvinas_statements(x["text"])
-                )
-                .assign(
-                    # Retrieve documents based on the input text ("text")
-                    retrieved_docs=itemgetter("text") | self.retriever
-                )
-                .assign(
-                    # Format the retrieved documents into the
-                    # "reference_phrases" context variable
-                    reference_phrases=itemgetter("retrieved_docs")
-                    | RunnableLambda(self._format_retrieved_docs)
-                )
-                # Prepare the input for the prompt template
-                # (needs "text" and "reference_phrases")
-                | RunnablePassthrough.assign(  # Ensure 'text' is available
-                    text=itemgetter("text")
-                )
-                | translation_prompt_template  # Apply the prompt template
-                | self.llm  # Call the language model
-                | StrOutputParser()  # Parse the output to a string
+            # Configure the query engine with our retriever and LLM
+            query_engine = RetrieverQueryEngine.from_args(
+                retriever=self.retriever,
+                llm=self.llm,
+                text_qa_template=translation_prompt_template,
+                # Customize response synthesis if needed
+                response_mode="compact",  # Standard LlamaIndex mode
             )
         except Exception as e:
-            logger.error(f"Error building the RAG chain: {e}", exc_info=True)
-            raise TranslationError(f"Failed to build RAG chain: {e}") from e
+            logger.error(f"Error building the query engine: {e}", exc_info=True)
+            raise TranslationError(f"Failed to build query engine: {e}") from e
 
-        logger.info("RAG chain built successfully.")
-        return rag_chain
+        logger.info("Query engine built successfully.")
+        return query_engine
 
-    async def translate(self, input_text: str, config: RunnableConfig = None) -> str:
+    async def translate(self, input_text: str) -> str:
         """
-        Translate input text to Argentinian Spanish using the RAG chain.
+        Translate input text to Argentinian Spanish using the RAG query engine.
 
         Args:
             input_text: The text to translate.
-            config: Optional RunnableConfig to pass to the chain invocation,
-                    e.g., for callbacks.
 
         Returns:
             The translated text as a string.
 
         Raises:
-            TranslationError: If the translation chain fails.
+            TranslationError: If the translation fails.
         """
         if not input_text:
             logger.warning("Translate called with empty input text.")
             return ""
 
-        logger.info(f"Translating text: '{input_text[:50]}...' with config: {config}")
+        logger.info(f"Translating text: '{input_text[:50]}...'")
         try:
-            # Pass the config to ainvoke
-            result = await self.chain.ainvoke({"text": input_text}, config=config)
+            # Preprocess input for Malvinas mentions
+            preprocessed_text = self._preprocess_malvinas_statements(input_text)
+
+            # Retrieve relevant context from the vector index
+            retrieval_results = self.retriever.retrieve(preprocessed_text)
+            reference_phrases = self._format_retrieved_docs(retrieval_results)
+
+            # Load the prompt template
+            translation_prompt_text = self.prompt_manager.translation_prompt
+
+            # Format the prompt with reference phrases and input text
+            formatted_prompt = translation_prompt_text.replace(
+                "{reference_phrases}", reference_phrases
+            ).replace("{text}", preprocessed_text)
+
+            # Query the LLM directly
+            response = await self.llm.acomplete(formatted_prompt)
+
             logger.info("Translation successful.")
-            return result
+            return response.text.strip()
         except Exception as e:
-            logger.error(
-                f"Error during translation chain invocation: {e}", exc_info=True
-            )
+            logger.error(f"Error during translation query: {e}", exc_info=True)
             # Raise specific error
             raise TranslationError(f"Translation failed: {e}") from e

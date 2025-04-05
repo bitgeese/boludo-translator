@@ -5,7 +5,31 @@ description = "ChéGpt - Argentinian Spanish Translator"
 authors = [
     {name = "Maciej Janowski", email = "maciej.janowski1@icloud.com"},
 ]
-dependencies = ["chainlit>=2.4.400", "langchain-openai>=0.3.12", "langchain>=0.3.21", "langchain-community>=0.3.20", "faiss-cpu>=1.10.0", "pydantic-settings>=2.8.1", "emoji>=2.14.1", "cairosvg>=2.7.1", "Pillow>=11.1.0", "langdetect>=1.0.9", "pandas>=2.2.3", "bs4>=0.0.2", "lxml>=5.3.1", "tiktoken>=0.9.0", "chromadb>=1.0.0", "fastapi>=0.115.9", "slowapi>=0.1.9", "psutil>=7.0.0", "memory-profiler>=0.61.0"]
+dependencies = [
+    "chainlit>=2.4.400", 
+    "faiss-cpu>=1.10.0", 
+    "pydantic-settings>=2.8.1", 
+    "emoji>=2.14.1", 
+    "cairosvg>=2.7.1", 
+    "Pillow>=11.1.0", 
+    "langdetect>=1.0.9", 
+    "pandas>=2.2.3", 
+    "bs4>=0.0.2", 
+    "lxml>=5.3.1", 
+    "tiktoken>=0.9.0", 
+    "chromadb>=1.0.0", 
+    "fastapi>=0.115.9", 
+    "slowapi>=0.1.9", 
+    "psutil>=7.0.0", 
+    "memory-profiler>=0.61.0",
+    # LlamaIndex dependencies
+    "llama-index>=0.10.0",
+    "llama-index-llms-openai>=0.1.6",
+    "llama-index-embeddings-openai>=0.1.5",
+    "llama-index-vector-stores-chroma>=0.1.3",
+    "llama-index-vector-stores-faiss>=0.1.3",
+    "llama-index-readers-file>=0.1.4"
+]
 requires-python = "==3.12.*"
 readme = "README.md"
 license = {text = "MIT"}

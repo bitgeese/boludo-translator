@@ -10,7 +10,6 @@ import os
 
 import chainlit as cl
 import psutil  # For memory tracking
-from langchain_core.runnables.config import RunnableConfig
 from limits import parse
 from limits.storage import MemoryStorage
 from limits.strategies import FixedWindowRateLimiter
@@ -69,7 +68,7 @@ def trim_message_history(session_id: str) -> None:
 # --- Global Initialization ---
 # Declare placeholders for global objects
 prompt_manager = None
-vector_store = None
+vector_index = None
 translation_service = None
 INITIALIZATION_SUCCESSFUL = False
 
@@ -78,12 +77,13 @@ try:
     # 1. Initialize Prompt Manager (uses settings internally)
     prompt_manager = PromptManager()
 
-    # 2. Load data and create vector store (uses settings internally)
-    vector_store = load_vector_store_and_data()
+    # 2. Load data and create vector index with a limited dataset for debugging
+    # Use a small number like 20 to avoid hitting rate limits during testing
+    vector_index = load_vector_store_and_data(debug_limit=20)
 
     # 3. Initialize Translation Service (uses settings internally)
     translation_service = TranslationService(
-        vector_store=vector_store, prompt_manager=prompt_manager
+        vector_index=vector_index, prompt_manager=prompt_manager
     )
     logger.info("Global initialization complete.")
     INITIALIZATION_SUCCESSFUL = True
@@ -119,9 +119,6 @@ message_limit_storage = MemoryStorage()
 message_limit_strategy = FixedWindowRateLimiter(message_limit_storage)
 message_rate_limit = parse("5/minute")  # Use limits.parse
 
-# Remove the slowapi limiter instance for messages
-# message_limiter = Limiter(key_func=get_session_id) # REMOVED
-
 
 # --- Helper Functions for Message Processing ---
 async def check_initialization() -> bool:
@@ -145,16 +142,38 @@ async def get_translation_service():
     return service
 
 
-async def perform_translation(service, message_content, config):
+# Custom callback handler for Chainlit integration with LlamaIndex
+class ChainlitCallbackHandler:
+    """Custom callback handler for LlamaIndex that integrates with Chainlit steps."""
+
+    async def on_retrieval_start(self, query):
+        step = cl.Step(name="Retrieving context")
+        await step.send()
+        self.current_step = step
+
+    async def on_retrieval_end(self, nodes):
+        if hasattr(self, "current_step"):
+            await self.current_step.end()
+
+    async def on_llm_start(self, prompt):
+        step = cl.Step(name="Generating translation")
+        await step.send()
+        self.current_step = step
+
+    async def on_llm_end(self, response):
+        if hasattr(self, "current_step"):
+            await self.current_step.end()
+
+
+async def perform_translation(service, message_content, callback_handler=None):
     """Perform the actual translation using the service."""
-    if settings.DEBUG:
-        # When debugging, let the callback handler manage steps
-        return await service.translate_text(message_content, config=config)
-    else:
-        # When not debugging, show a simple progress step
-        async with cl.Step(name="Translating..."):
-            # Config will have empty callbacks list here
-            return await service.translate_text(message_content, config=config)
+    if settings.DEBUG and callback_handler:
+        # In debug mode, just log the callback handler but don't use it
+        logger.info("Debug mode: callback handler is enabled but not used")
+
+    # Show a simple progress step
+    async with cl.Step(name="Translating..."):
+        return await service.translate_text(message_content)
 
 
 async def log_memory_usage(session_id):
@@ -201,7 +220,6 @@ async def start():
 
 
 @cl.on_message
-# @message_limiter.limit("5/minute") # REMOVED Decorator
 async def on_message(message: cl.Message):
     """Handle incoming text messages and provide translations."""
     # --- Rate Limit Check ---
@@ -236,15 +254,15 @@ async def on_message(message: cl.Message):
             return
 
         # Setup for translation
-        callbacks = []
+        callback_handler = None
         if settings.DEBUG:
-            callbacks.append(cl.LangchainCallbackHandler())
-            logger.info("Debug enabled: Adding LangchainCallbackHandler.")
-
-        config = RunnableConfig(callbacks=callbacks)
+            callback_handler = ChainlitCallbackHandler()
+            logger.info("Debug enabled: Added ChainlitCallbackHandler.")
 
         # Perform translation
-        translation_result = await perform_translation(service, message.content, config)
+        translation_result = await perform_translation(
+            service, message.content, callback_handler
+        )
 
         # Send result
         await cl.Message(content=f"Translation: {translation_result}").send()
