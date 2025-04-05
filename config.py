@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # 4. More user-friendly for development with automatic persistence
     CHROMA_PERSIST_DIRECTORY: str = "chroma_db"
 
+    # --- Memory Management Configuration ---
+    # Maximum number of documents to retrieve for context (smaller = less memory)
+    MAX_RETRIEVAL_DOCS: int = 3
+    # Number of documents to process in a batch during vector store creation
+    VECTORSTORE_BATCH_SIZE: int = 50
+    # Maximum history length (in message pairs) for chat sessions
+    MAX_HISTORY_LENGTH: int = 15
+
     # --- Prompt Configuration ---
     PROMPTS_DIR: str = "prompts"
     SYSTEM_PROMPT_FILE: str = "system.md"

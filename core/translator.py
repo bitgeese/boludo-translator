@@ -67,7 +67,8 @@ class ArgentinianTranslator:
                 streaming=True,  # Enable streaming by default if needed later
             )
 
-        self.retriever = self._create_retriever()
+        # Create retriever with configured number of documents to limit memory usage
+        self.retriever = self._create_retriever(k=settings.MAX_RETRIEVAL_DOCS)
         self.chain = self._build_rag_chain()
         logger.info("ArgentinianTranslator initialized successfully.")
 
@@ -123,7 +124,18 @@ class ArgentinianTranslator:
     def _create_retriever(self, k: int = 3):
         """Creates a retriever from the vector store."""
         logger.debug(f"Creating retriever with k={k}")
-        return self.vector_store.as_retriever(search_kwargs={"k": k})
+        # Add memory management for retrieval
+        return self.vector_store.as_retriever(
+            search_kwargs={
+                "k": k,
+                # Limit fetch size to reduce memory usage
+                "fetch_k": k * 3,
+                # Use more efficient MMR retrieval
+                # that removes duplicates to save memory
+                "search_type": "mmr",
+                "lambda_mult": 0.8,  # Controls diversity (higher = more diversity)
+            }
+        )
 
     def _format_retrieved_docs(self, docs: List[Document]) -> str:
         """Formats retrieved documents into a string for the prompt context."""

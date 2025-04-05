@@ -6,8 +6,10 @@ It initializes necessary components and handles user interactions.
 """
 
 import logging
+import os
 
 import chainlit as cl
+import psutil  # For memory tracking
 from langchain_core.runnables.config import RunnableConfig
 from limits import parse
 from limits.storage import MemoryStorage
@@ -31,6 +33,38 @@ logging.basicConfig(
 # logging.getLogger("httpx").setLevel(logging.WARNING)
 # logging.getLogger("openai").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+# --- Memory Management Constants ---
+# Maximum number of message pairs (user+assistant) to keep in memory
+MAX_HISTORY_LENGTH = settings.MAX_HISTORY_LENGTH
+
+
+# Function to trim message history to prevent memory bloat
+def trim_message_history(session_id: str) -> None:
+    """
+    Trims the message history for a session when it gets too long.
+    This helps prevent memory buildup in long conversations.
+
+    Args:
+        session_id: The ID of the current session
+    """
+    try:
+        # Get current message history
+        history = cl.user_session.get("message_history", [])
+
+        # If history exceeds max length, trim it
+        if len(history) > MAX_HISTORY_LENGTH * 2:  # Each exchange has 2 messages
+            # Keep only the most recent messages
+            history = history[-MAX_HISTORY_LENGTH * 2 :]
+            cl.user_session.set("message_history", history)
+            logger.info(
+                f"Trimmed message history for session {session_id} "
+                f"to {len(history)} messages"
+            )
+    except Exception as e:
+        # Log but don't crash if history trimming fails
+        logger.warning(f"Failed to trim message history: {e}")
+
 
 # --- Global Initialization ---
 # Declare placeholders for global objects
@@ -88,6 +122,57 @@ message_rate_limit = parse("5/minute")  # Use limits.parse
 # Remove the slowapi limiter instance for messages
 # message_limiter = Limiter(key_func=get_session_id) # REMOVED
 
+
+# --- Helper Functions for Message Processing ---
+async def check_initialization() -> bool:
+    """Check if the application is properly initialized."""
+    if not INITIALIZATION_SUCCESSFUL:
+        await cl.ErrorMessage(content="Application not initialized.").send()
+        return False
+    return True
+
+
+async def get_translation_service():
+    """Get the translation service from the user session."""
+    service = cl.user_session.get("translation_service")
+    if not service:
+        logger.error("TranslationService not found in user session.")
+        await cl.ErrorMessage(
+            content="Error: Translation service unavailable. "
+            "Please restart the chat."
+        ).send()
+        return None
+    return service
+
+
+async def perform_translation(service, message_content, config):
+    """Perform the actual translation using the service."""
+    if settings.DEBUG:
+        # When debugging, let the callback handler manage steps
+        return await service.translate_text(message_content, config=config)
+    else:
+        # When not debugging, show a simple progress step
+        async with cl.Step(name="Translating..."):
+            # Config will have empty callbacks list here
+            return await service.translate_text(message_content, config=config)
+
+
+async def log_memory_usage(session_id):
+    """Log current memory usage for monitoring."""
+    try:
+        # Use psutil to get memory info
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024  # Convert to MB
+        logger.info(f"Memory usage: {memory_mb:.2f} MB for session {session_id}")
+
+        # If memory usage is high, log a warning
+        if memory_mb > 400:  # 400MB is getting close to the 512MB limit
+            logger.warning(f"High memory usage detected: {memory_mb:.2f} MB")
+    except Exception as e:
+        logger.error(f"Failed to log memory usage: {e}")
+
+
 # --- Chainlit Event Handlers ---
 
 
@@ -119,77 +204,63 @@ async def start():
 # @message_limiter.limit("5/minute") # REMOVED Decorator
 async def on_message(message: cl.Message):
     """Handle incoming text messages and provide translations."""
-    # --- MANUAL Rate Limit Check (using 'limits' library directly) --- <<< CORRECTED
+    # --- Rate Limit Check ---
     session_id = get_session_id()
-    # Use the limits strategy's hit() method. It returns False if the limit is exceeded.
     if not message_limit_strategy.hit(message_rate_limit, session_id):
         # Limit exceeded
         logger.warning(f"Rate limit exceeded for session {session_id}")
         await cl.ErrorMessage(
             content="Rate limit exceeded (5 messages per minute). Please wait a moment."
         ).send()
-        return  # Stop processing this message
-    # --- End of Rate Limit Check ---
+        return
 
-    # Proceed with message handling only if the rate limit check passed
+    # --- Memory Management ---
+    trim_message_history(session_id)
+
+    # Track this message in history
+    history = cl.user_session.get("message_history", [])
+    history.append({"role": "user", "content": message.content})
+    cl.user_session.set("message_history", history)
+
     try:
-        # REMOVED await message_limiter.hit("5/minute", get_session_id())
-
-        if not INITIALIZATION_SUCCESSFUL:
-            await cl.ErrorMessage(content="Application not initialized.").send()
+        # Basic validations
+        if not await check_initialization():
             return
 
-        service = cl.user_session.get("translation_service")
-
+        service = await get_translation_service()
         if not service:
-            logger.error("TranslationService not found in user session.")
-            await cl.ErrorMessage(
-                content="Error: Translation service unavailable. "
-                "Please restart the chat."
-            ).send()
             return
 
         if not message.content:
             logger.warning("Received empty message.")
-            return  # Ignore empty messages
+            return
 
-        # Conditionally add the callback handler for step visibility
+        # Setup for translation
         callbacks = []
         if settings.DEBUG:
             callbacks.append(cl.LangchainCallbackHandler())
-            logger.info(
-                "Debug enabled: Adding LangchainCallbackHandler for step visibility."
-            )
+            logger.info("Debug enabled: Adding LangchainCallbackHandler.")
 
         config = RunnableConfig(callbacks=callbacks)
 
-        # Use the service to translate, passing the config (with or without callbacks)
-        if settings.DEBUG:
-            # When debugging, let the callback handler manage steps
-            translation_result = await service.translate_text(
-                message.content, config=config
-            )
-        else:
-            # When not debugging, show a simple progress step
-            async with cl.Step(name="Translating..."):
-                # Config will have empty callbacks list here
-                translation_result = await service.translate_text(
-                    message.content, config=config
-                )
-                # Optionally set step output
-                # (might be redundant if result is sent immediately after)
-                # step.output = translation_result
+        # Perform translation
+        translation_result = await perform_translation(service, message.content, config)
 
-        # Send the final translation result
+        # Send result
         await cl.Message(content=f"Translation: {translation_result}").send()
+
+        # Update history
+        history = cl.user_session.get("message_history", [])
+        history.append(
+            {"role": "assistant", "content": f"Translation: {translation_result}"}
+        )
+        cl.user_session.set("message_history", history)
 
     except TranslationError as e:
         logger.error(
             f"Translation failed for '{message.content[:50]}...': {e}", exc_info=False
-        )  # exc_info=False to avoid redundant stack trace from service layer
-        await cl.ErrorMessage(
-            content=f"Sorry, translation failed: {e}"
-        ).send()  # Show specific error if safe
+        )
+        await cl.ErrorMessage(content=f"Sorry, translation failed: {e}").send()
     except AppError as e:
         logger.error(
             f"Service error during translation for '{message.content[:50]}...': {e}",
@@ -198,20 +269,30 @@ async def on_message(message: cl.Message):
         await cl.ErrorMessage(
             content="Sorry, an application error occurred during translation."
         ).send()
-    except Exception as e:  # Catch other potential exceptions from the core logic
-        # This generic catch might now be redundant if specific errors are handled
-        # but kept for safety, ensuring RateLimitExceeded is handled first.
+    except Exception as e:
         logger.error(
             f"Unexpected error during translation for '{message.content[:50]}...': {e}",
             exc_info=True,
         )
         await cl.ErrorMessage(
-            content=(
-                "Sorry, an unexpected error occurred during translation. "
-                "Please try again."
-            )
+            content="Sorry, an unexpected error occurred during translation."
         ).send()
+    finally:
+        # Log memory usage
+        await log_memory_usage(session_id)
 
 
-# Removed @cl.on_settings_update as it wasn't used after refactor
-# Removed @cl.on_chat_end/@cl.on_stop as they were empty
+@cl.on_chat_end
+async def on_chat_end():
+    """Clean up resources when a chat session ends."""
+    try:
+        # Get the session ID for logging
+        session_id = cl.context.session.id
+        logger.info(f"Cleaning up resources for ending session {session_id}")
+
+        # Clear user session data to free memory
+        cl.user_session.clear()
+
+        logger.info(f"Successfully cleaned up resources for session {session_id}")
+    except Exception as e:
+        logger.error(f"Error during session cleanup: {e}", exc_info=True)

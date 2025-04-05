@@ -32,15 +32,15 @@ ISO_639_1_PATTERN = re.compile(r"^[a-z]{2}$")
 # --- Language Detection Prompt Template (Keep it minimal) ---
 # Use a single triple-quoted string for clarity and correct parsing
 LANG_DETECT_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(
-    f"""Identify the primary language of the following text. \
+    """Identify the primary language of the following text. \
 Respond with ONLY the two-letter ISO 639-1 language code (e.g., 'en', 'es', 'fr'). \
 If you are unsure, the text is nonsensical, gibberish, or not a real language, \
-respond with '{UNKNOWN_LANG_CODE}'. \
+respond with '{unknown_lang_code}'. \
 Text:
 \"\"\"
 {{user_input}}
 \"\"\"
-Language code:"""
+Language code:""".format(unknown_lang_code=UNKNOWN_LANG_CODE)
 )
 
 # Seed langdetect for consistent results
@@ -113,8 +113,17 @@ class TranslationService:
         """Detect language using the LLM chain."""
         logger.debug(f"Using LLM for language detection for: '{text[:50]}...'")
         try:
+            # Use a shortened version of the text for language detection to save tokens
+            # For very short texts, use the whole text
+            if len(text) > 100:
+                detection_text = text[:100]  # Only use the first 100 characters
+            else:
+                detection_text = text
+
             # Use ainvoke for the async context
-            result = await self._lang_detect_chain.ainvoke({"user_input": text})
+            result = await self._lang_detect_chain.ainvoke(
+                {"user_input": detection_text}
+            )
             # Clean up potential whitespace and normalize case
             detected_lang = result.strip().lower()
             logger.debug(f"LLM detection result: {detected_lang}")

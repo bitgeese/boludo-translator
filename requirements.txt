@@ -1262,3 +1262,5 @@ yarl==1.18.3 \
 zipp==3.21.0 \
     --hash=sha256:2c9958f6430a2040341a52eb608ed6dd93ef4392e02ffe219417c1b28b5dd1f4 \
     --hash=sha256:ac1bbe05fd2991f160ebce24ffbac5f6d11d83dc90891255885223d42b3cd931
+memory-profiler==0.61.0 \
+    --hash=sha256:97c82e7e66a05ad5e1f2d0dfd23eae374cb1ab8aca87d9e0c27f03ab74fcef3d

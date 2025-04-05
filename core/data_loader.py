@@ -171,10 +171,16 @@ def _create_vector_store(documents: List[Document], api_key: str) -> VectorStore
             # Ensure directory exists
             os.makedirs(settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
 
+            # Add batch_size parameter to control memory usage during indexing
             vector_store = Chroma.from_documents(
                 documents=documents,
                 embedding=embedding_model,
                 persist_directory=settings.CHROMA_PERSIST_DIRECTORY,
+                collection_metadata={
+                    "hnsw:space": "cosine"
+                },  # More efficient distance calculation
+                # Process documents in smaller batches to reduce peak memory usage
+                batch_size=settings.VECTORSTORE_BATCH_SIZE,
             )
             # Persist to disk
             vector_store.persist()

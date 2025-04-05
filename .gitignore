@@ -63,3 +63,6 @@ htmlcov/
 
 # Vector database
 chroma_db/ 
+
+# Cursor
+.cursor/
