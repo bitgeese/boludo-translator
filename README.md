@@ -8,7 +8,6 @@ An interactive web application that translates English or Spanish text into auth
 - **Smart Language Detection**: Automatically detects input language (English/Spanish). Uses LLM for short inputs and a faster statistical model for longer inputs.
 - **Context-Aware Translations**: Leverages RAG with multiple data sources for authentic results:
   - **Phrase Database**: Curated collection of Argentinian expressions and slang
-  - **VentureOut Spanish Content**: Articles and lessons about Rioplatense Spanish
 - **Interactive Web UI**: Clean interface powered by Chainlit.
 - **Vector Search**: Employs FAISS or Chroma for efficient semantic search of relevant context.
 - **Prompt Management**: Centralized and easy-to-edit prompts.
@@ -72,8 +71,8 @@ Located at `data/phrases.csv` containing Argentinian expressions. The expected c
 - `Region Specificity` (Optional): Where in Argentina the expression is commonly used.
 - `Level of Formality` (Optional): E.g., formal, casual, slang.
 
-### 2. VentureOut Spanish Content (JSONL)
-Located at `data/ventureout_data.jsonl` containing articles and lessons about Rioplatense Spanish from [VentureOut Spanish](https://ventureoutspanish.com/).
+### 2.  Scraped content from blogs (JSONL)
+Located at `data/ventureout_data.jsonl` containing articles and lessons about Rioplatense Spanish 
 
 - Content is scraped and cleaned using scripts in the `data_scripts/` directory
 - Each record contains the URL, title, and cleaned content
@@ -152,4 +151,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - The [Chainlit](https://chainlit.io/) team for the excellent UI framework.
 - The [LangChain](https://www.langchain.com/) community for their powerful tools.
 - OpenAI for the underlying language models.
-- [VentureOut Spanish](https://ventureoutspanish.com/) for their valuable content on Rioplatense Spanish.
