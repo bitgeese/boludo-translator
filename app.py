@@ -321,12 +321,3 @@ async def on_chat_end():
             logger.info(f"Successfully cleaned up resources for session {session_id}")
     except Exception as e:
         logger.error(f"Error during session cleanup: {e}", exc_info=True)
-
-
-@cl.on_socket_disconnect
-async def on_socket_disconnect():
-    """Handle Socket.IO disconnection events."""
-    try:
-        logger.debug("Socket disconnected")
-    except Exception as e:
-        logger.error(f"Error handling socket disconnect: {e}", exc_info=True)
