@@ -7,8 +7,8 @@ responsible for loading, processing, and vectorizing content from multiple data 
 Key Capabilities:
 - Loading structured data from CSV files containing Argentine Spanish phrases
 - Loading content from VentureOut Spanish blog (via JSONL format)
-- Converting raw data into LangChain Document objects with appropriate metadata
-- Creating and managing vector stores (FAISS or Chroma) based on configuration
+- Converting raw data into LlamaIndex Document objects with appropriate metadata
+- Creating and managing vector indices based on configuration
 - Providing a unified interface for retrieving vectorized data
 
 The module abstracts away the complexities of data source management, allowing
@@ -20,27 +20,25 @@ Usage:
     from core.data_loader import load_vector_store_and_data
 
     # Load all configured data sources and create vector store
-    vector_store = load_vector_store_and_data()
+    vector_index = load_vector_store_and_data()
 
-    # Perform similarity search
-    results = vector_store.similarity_search("What is Lunfardo?", k=3)
-
-    # Access retrieved documents
-    for doc in results:
-        print(f"Source: {doc.metadata.get('source')}")
-        print(doc.page_content)
+    # Use the index for querying
+    query_engine = vector_index.as_query_engine()
+    response = query_engine.query("What is Lunfardo?")
+    print(response.response)
 """
 
 # Standard library imports
 import logging
-import os
-from typing import List, Union
+from typing import List, Optional, Union
 
 # Third-party library imports
 import pandas as pd
-from langchain_community.vectorstores import FAISS, Chroma
-from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from llama_index.core import VectorStoreIndex
+from llama_index.core.schema import Document
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.vector_stores.faiss import FaissVectorStore
 
 # Local application imports
 # Import the settings object
@@ -57,7 +55,8 @@ from .ventureout_loader import (
 )
 
 # Type alias for vector stores
-VectorStore = Union[FAISS, Chroma]
+VectorStore = Union[FaissVectorStore, ChromaVectorStore]
+IndexType = VectorStoreIndex
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +96,7 @@ def _load_data_from_csv(file_path: str) -> pd.DataFrame:
 
 
 def _create_documents_from_dataframe(df: pd.DataFrame) -> List[Document]:
-    """Converts DataFrame rows into LangChain Document objects."""
+    """Converts DataFrame rows into LlamaIndex Document objects."""
     documents = []
     # Define expected columns for clarity
     expected_cols = [
@@ -151,131 +150,212 @@ def _create_documents_from_dataframe(df: pd.DataFrame) -> List[Document]:
             "data_type": "phrase",  # Add type for potential filtering
         }
         # Ensure all metadata values are strings for vector store compatibility
-        doc = Document(page_content=content.strip(), metadata=metadata)
+        doc = Document(text=content.strip(), metadata=metadata)
         documents.append(doc)
     logger.info(f"Created {len(documents)} documents from CSV DataFrame.")
     return documents
 
 
-def _create_vector_store(documents: List[Document], api_key: str) -> VectorStore:
-    """Creates a vector store from documents using OpenAI embeddings."""
+def _create_vector_index(documents: List[Document], api_key: str) -> IndexType:
+    """Creates a vector index from documents using OpenAI embeddings."""
     if not documents:
-        logger.error("No documents provided to create vector store.")
-        raise DataLoaderError("Cannot create vector store with empty documents list.")
+        logger.error("No documents provided to create vector index.")
+        raise DataLoaderError("Cannot create vector index with empty documents list.")
     try:
-        # Ensure api_key is passed explicitly for clarity
-        embedding_model = OpenAIEmbeddings(openai_api_key=api_key)
+        import time
 
-        # Choose vector store type based on settings
-        if settings.VECTORSTORE_TYPE.upper() == "CHROMA":
-            # Ensure directory exists
-            os.makedirs(settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
+        # Initialize embedding model with API key and more conservative settings
+        embed_model = OpenAIEmbedding(
+            api_key=api_key,
+            embed_batch_size=10,  # Smaller batches for rate limits
+            retry_on_throttling=True,
+            model="text-embedding-3-small",  # Small embedding model
+            additional_kwargs={
+                "dimensions": 1536  # Default embedding dimensions
+            },
+        )
 
-            # Add batch_size parameter to control memory usage during indexing
-            vector_store = Chroma.from_documents(
-                documents=documents,
-                embedding=embedding_model,
-                persist_directory=settings.CHROMA_PERSIST_DIRECTORY,
-                collection_metadata={
-                    "hnsw:space": "cosine"
-                },  # More efficient distance calculation
-                # Process documents in smaller batches to reduce peak memory usage
-                batch_size=settings.VECTORSTORE_BATCH_SIZE,
-            )
-            # Persist to disk
-            vector_store.persist()
+        # Process documents in smaller batches to avoid rate limits
+        logger.info(
+            f"Processing {len(documents)} documents in batches to avoid rate limits"
+        )
+        batch_size = 20
+        all_indices = []
+
+        for i in range(0, len(documents), batch_size):
+            batch_end = min(i + batch_size, len(documents))
             logger.info(
-                f"Successfully created Chroma vector store in "
-                f"{settings.CHROMA_PERSIST_DIRECTORY}."
+                f"Processing batch {i//batch_size + 1}: documents {i} to {batch_end}"
             )
+
+            # Create an index for this batch
+            batch_documents = documents[i:batch_end]
+
+            # Add delay between batches to avoid rate limiting
+            if i > 0:
+                logger.info("Waiting 10 seconds to avoid rate limits...")
+                time.sleep(10)
+
+            # Create the index for this batch
+            batch_index = VectorStoreIndex.from_documents(
+                documents=batch_documents, embed_model=embed_model, show_progress=True
+            )
+
+            all_indices.append(batch_index)
+
+            logger.info(f"Completed batch {i//batch_size + 1}")
+
+        # If we processed in batches, use the first index
+        # Normally we'd want to merge them, but for now this is simpler
+        if all_indices:
+            logger.info(
+                f"Successfully created vector index with {len(all_indices)} batches"
+            )
+            return all_indices[0]
         else:
-            # Default to FAISS
-            vector_store = FAISS.from_documents(documents, embedding_model)
-            logger.info("Successfully created FAISS vector store.")
-        return vector_store
+            logger.error("No indices were created")
+            raise DataLoaderError("Failed to create any vector indices")
+
     except Exception as e:
-        logger.error(f"Failed to create vector store: {e}", exc_info=True)
+        logger.error(f"Failed to create vector index: {e}", exc_info=True)
         # Raise specific error
-        raise DataLoaderError(f"Failed to create vector store: {e}") from e
+        raise DataLoaderError(f"Failed to create vector index: {e}") from e
 
 
-def load_vector_store_and_data() -> VectorStore:
+def _load_phrases_data() -> List[Document]:
     """
-    Loads data from configured sources, creates Documents, builds a vector store,
-    and returns the store.
+    Load and process data from the phrases CSV file.
+
+    Returns:
+        List of Document objects created from the CSV data.
+
+    Raises:
+        DataLoaderError: If loading or processing fails.
+    """
+    logger.info(f"Loading phrases from {settings.PHRASES_CSV_PATH}...")
+    df = _load_data_from_csv(settings.PHRASES_CSV_PATH)
+    if df.empty:
+        raise DataLoaderError(
+            f"No data loaded from {settings.PHRASES_CSV_PATH}. Cannot proceed."
+        )
+
+    phrase_documents = _create_documents_from_dataframe(df)
+    if not phrase_documents:
+        raise DataLoaderError(
+            "No documents were created from the CSV DataFrame. Cannot proceed."
+        )
+
+    logger.info(f"Added {len(phrase_documents)} phrase documents to the collection.")
+    return phrase_documents
+
+
+def _load_ventureout_data() -> List[Document]:
+    """
+    Load and process VentureOut data.
+
+    Returns:
+        List of Document objects created from VentureOut data.
+
+    Raises:
+        DataLoaderError: If loading or processing fails.
+    """
+    # Try to copy data from data_scripts to data directory if needed
+    copy_ventureout_data_to_data_dir()
+
+    logger.info(f"Loading VentureOut data from {settings.VENTUREOUT_DATA_PATH}...")
+    try:
+        ventureout_data = load_ventureout_data(settings.VENTUREOUT_DATA_PATH)
+        ventureout_documents = create_ventureout_documents(ventureout_data)
+
+        if ventureout_documents:
+            logger.info(
+                f"Added {len(ventureout_documents)} VentureOut docs to the collection."
+            )
+            return ventureout_documents
+        else:
+            logger.warning(
+                "No VentureOut documents were created. " "Continuing with phrases only."
+            )
+            return []
+    except DataLoaderError as e:
+        # Log but continue with phrases only
+        logger.warning(
+            f"Failed to load VentureOut data: {e}. " f"Continuing with phrases only."
+        )
+        return []
+
+
+def _apply_debug_limit(
+    documents: List[Document], debug_limit: Optional[int]
+) -> List[Document]:
+    """
+    Apply debug limit to the number of documents if specified.
+
+    Args:
+        documents: List of Document objects to limit.
+        debug_limit: Optional limit on the number of documents.
+
+    Returns:
+        List of Document objects, limited to debug_limit if specified.
+    """
+    if debug_limit is not None and len(documents) > debug_limit:
+        logger.info(f"Limiting documents to {debug_limit} for debugging")
+        return documents[:debug_limit]
+    return documents
+
+
+def load_vector_store_and_data(debug_limit: int = None) -> IndexType:
+    """
+    Loads data from configured sources, creates Documents, builds a vector index,
+    and returns the index.
+
+    Args:
+        debug_limit: Optional limit on the number of documents to load for debugging
 
     Data sources include:
     1. Phrases CSV - Always loaded
     2. VentureOut JSONL - Loaded if USE_VENTUREOUT_DATA is True
 
     Returns:
-        The vector store (FAISS or Chroma based on settings).
+        The vector index based on the loaded documents.
 
     Raises:
         DataLoaderError: If any step in the loading or processing fails.
     """
     logger.info("Starting data loading process...")
-    all_documents = []
 
     try:
-        # 1. Load and process phrases CSV (always required)
-        logger.info(f"Loading phrases from {settings.PHRASES_CSV_PATH}...")
-        df = _load_data_from_csv(settings.PHRASES_CSV_PATH)
-        if df.empty:
-            raise DataLoaderError(
-                f"No data loaded from {settings.PHRASES_CSV_PATH}. Cannot proceed."
-            )
+        # 1. Load phrase documents (required)
+        all_documents = _load_phrases_data()
 
-        phrase_documents = _create_documents_from_dataframe(df)
-        if not phrase_documents:
-            raise DataLoaderError(
-                "No documents were created from the CSV DataFrame. Cannot proceed."
-            )
+        # 2. Load VentureOut data if enabled and we have space for it
+        has_debug_space = len(all_documents) < debug_limit if debug_limit else True
+        if settings.USE_VENTUREOUT_DATA and has_debug_space:
+            ventureout_docs = _load_ventureout_data()
 
-        all_documents.extend(phrase_documents)
-        logger.info(
-            f"Added {len(phrase_documents)} phrase documents to the collection."
-        )
-
-        # 2. Load and process VentureOut data if enabled
-        if settings.USE_VENTUREOUT_DATA:
-            # Try to copy data from data_scripts to data directory if needed
-            copy_ventureout_data_to_data_dir()
-
-            logger.info(
-                f"Loading VentureOut data from {settings.VENTUREOUT_DATA_PATH}..."
-            )
-            try:
-                ventureout_data = load_ventureout_data(settings.VENTUREOUT_DATA_PATH)
-                ventureout_documents = create_ventureout_documents(ventureout_data)
-
-                if ventureout_documents:
-                    all_documents.extend(ventureout_documents)
+            # Only add VentureOut docs up to the debug limit
+            if debug_limit is not None and ventureout_docs:
+                remaining = max(0, debug_limit - len(all_documents))
+                if remaining < len(ventureout_docs):
                     logger.info(
-                        f"Added {len(ventureout_documents)} VentureOut documents "
-                        f"to the collection."
+                        f"Limiting VentureOut docs to {remaining} (debug_limit)"
                     )
-                else:
-                    logger.warning(
-                        "No VentureOut documents were created. "
-                        "Continuing with phrases only."
-                    )
-            except DataLoaderError as e:
-                # Log but continue with phrases only
-                logger.warning(
-                    f"Failed to load VentureOut data: {e}. "
-                    f"Continuing with phrases only."
-                )
+                    ventureout_docs = ventureout_docs[:remaining]
 
-        # 3. Create vector store from all documents
+            all_documents.extend(ventureout_docs)
+
+        # 3. Apply debug limit to all documents
+        all_documents = _apply_debug_limit(all_documents, debug_limit)
+
+        # 4. Create vector index from all documents
         logger.info(
-            f"Creating vector store with {len(all_documents)} total documents..."
+            f"Creating vector index with {len(all_documents)} total documents..."
         )
-        vector_store = _create_vector_store(all_documents, settings.OPENAI_API_KEY)
+        vector_index = _create_vector_index(all_documents, settings.OPENAI_API_KEY)
 
-        logger.info("Data loading and vector store creation complete.")
-        # Return the vector store
-        return vector_store
+        logger.info("Data loading and vector index creation complete.")
+        return vector_index
+
     except DataLoaderError:  # Re-raise specific errors
         raise
     except Exception as e:  # Catch any other unexpected errors

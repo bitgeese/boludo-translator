@@ -7,14 +7,12 @@ It initializes and holds the core ArgentinianTranslator instance.
 
 import logging
 import re  # For language code validation
-from typing import Optional
 
-from langchain_community.vectorstores import FAISS
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables.config import RunnableConfig
 from langdetect import LangDetectException, detect
 from langdetect.detector_factory import DetectorFactory
+from llama_index.core import VectorStoreIndex
+from llama_index.core.prompts import PromptTemplate
+from llama_index.llms.openai import OpenAI
 
 from config import settings  # Import settings
 from core.exceptions import AppError, TranslationError
@@ -30,18 +28,16 @@ UNKNOWN_LANG_CODE = "unknown"  # Standardize unknown code
 ISO_639_1_PATTERN = re.compile(r"^[a-z]{2}$")
 
 # --- Language Detection Prompt Template (Keep it minimal) ---
-# Use a single triple-quoted string for clarity and correct parsing
-LANG_DETECT_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(
-    """Identify the primary language of the following text. \
+# LlamaIndex prompt template for language detection
+LANG_DETECT_PROMPT_TEXT = """Identify the primary language of the following text. \
 Respond with ONLY the two-letter ISO 639-1 language code (e.g., 'en', 'es', 'fr'). \
 If you are unsure, the text is nonsensical, gibberish, or not a real language, \
 respond with '{unknown_lang_code}'. \
 Text:
-\"\"\"
 {{user_input}}
-\"\"\"
 Language code:""".format(unknown_lang_code=UNKNOWN_LANG_CODE)
-)
+
+LANG_DETECT_PROMPT_TEMPLATE = PromptTemplate(template=LANG_DETECT_PROMPT_TEXT)
 
 # Seed langdetect for consistent results
 try:
@@ -55,29 +51,31 @@ except NameError:
 class TranslationService:
     """Orchestrates translation using the ArgentinianTranslator."""
 
-    def __init__(self, vector_store: FAISS, prompt_manager: PromptManager):
+    def __init__(self, vector_index: VectorStoreIndex, prompt_manager: PromptManager):
         """
         Initializes the TranslationService.
         Args:
-            vector_store: The pre-loaded FAISS vector store.
+            vector_index: The pre-loaded VectorStoreIndex.
             prompt_manager: The pre-initialized PromptManager.
         """
-        if not vector_store:
-            logger.error("TranslationService requires a valid vector_store.")
-            raise ValueError("vector_store cannot be None")
+        if not vector_index:
+            logger.error("TranslationService requires a valid vector_index.")
+            raise ValueError("vector_index cannot be None")
         if not prompt_manager:
             logger.error("TranslationService requires a valid prompt_manager.")
             raise ValueError("prompt_manager cannot be None")
 
         self.translator = ArgentinianTranslator(
-            vector_store=vector_store, prompt_manager=prompt_manager
+            vector_index=vector_index, prompt_manager=prompt_manager
         )
 
-        # Create the LLM language detection chain (reuses the translator's LLM)
-        self._lang_detect_chain = (
-            LANG_DETECT_PROMPT_TEMPLATE | self.translator.llm | StrOutputParser()
+        # Create the language detection LLM
+        self.lang_detect_llm = OpenAI(
+            model=settings.TRANSLATOR_MODEL_NAME,
+            api_key=settings.OPENAI_API_KEY,
+            temperature=0.0,  # Use lower temperature for deterministic detection
         )
-        logger.info("LLM language detection chain created.")
+        logger.info("LLM language detection initialized.")
 
         logger.info("TranslationService initialized successfully.")
 
@@ -110,7 +108,7 @@ class TranslationService:
             return UNKNOWN_LANG_CODE
 
     async def _detect_language_llm(self, text: str) -> str:
-        """Detect language using the LLM chain."""
+        """Detect language using the LLM."""
         logger.debug(f"Using LLM for language detection for: '{text[:50]}...'")
         try:
             # Use a shortened version of the text for language detection to save tokens
@@ -120,12 +118,13 @@ class TranslationService:
             else:
                 detection_text = text
 
-            # Use ainvoke for the async context
-            result = await self._lang_detect_chain.ainvoke(
-                {"user_input": detection_text}
-            )
-            # Clean up potential whitespace and normalize case
-            detected_lang = result.strip().lower()
+            # Format the prompt with the text
+            prompt = LANG_DETECT_PROMPT_TEMPLATE.format(user_input=detection_text)
+
+            # Get the response from the LLM
+            completion = await self.lang_detect_llm.acomplete(prompt)
+            detected_lang = completion.text.strip().lower()
+
             logger.debug(f"LLM detection result: {detected_lang}")
 
             # Validate the output format
@@ -135,7 +134,7 @@ class TranslationService:
                 return detected_lang
             else:
                 logger.warning(
-                    f"LLM detection returned unexpected format: '{result}'. "
+                    f"LLM detection returned unexpected format: '{detected_lang}'. "
                     f"Treating as unknown."
                 )
                 return UNKNOWN_LANG_CODE
@@ -148,28 +147,60 @@ class TranslationService:
 
     async def _detect_language(self, text: str) -> str:
         """Detects language using hybrid approach: LLM for short, statistical
-        for long."""
+        for long, with additional safeguards for common English phrases."""
         word_count = len(text.split())  # Simple word count
         logger.debug(f"Input word count: {word_count}")
 
+        # First check if the text contains obvious English markers
+        english_markers = [
+            "let's",
+            "let us",
+            "we'll",
+            "we will",
+            "i'm",
+            "i am",
+            "you're",
+            "you are",
+        ]
+        text_lower = text.lower()
+
+        for marker in english_markers:
+            if marker in text_lower:
+                logger.debug(f"Detected English marker '{marker}' in text - English")
+                return "en"
+
+        # If no obvious markers, proceed with regular detection
         if word_count <= settings.SHORT_INPUT_WORD_THRESHOLD:
             logger.debug("Input is short, using LLM detection.")
-            return await self._detect_language_llm(text)
+            detected_lang = await self._detect_language_llm(text)
         else:
             logger.debug("Input is long, using statistical detection.")
-            return await self._detect_language_statistical(text)
+            detected_lang = await self._detect_language_statistical(text)
 
-    async def translate_text(
-        self, text: str, config: Optional[RunnableConfig] = None
-    ) -> str:
+        # Add safeguard for non-supported languages
+        # If text looks like English (mostly ASCII), treat as English
+        if detected_lang not in SUPPORTED_LANGS and detected_lang != UNKNOWN_LANG_CODE:
+            # Calculate ASCII character ratio
+            ascii_chars = sum(1 for c in text if ord(c) < 128)
+            total_chars = len(text) if text else 1
+            ascii_ratio = ascii_chars / total_chars
+
+            if ascii_ratio > 0.9:  # If text is >90% ASCII, likely English
+                logger.warning(
+                    f"Detected '{detected_lang}' not supported, "
+                    f"but likely English. Treating as English."
+                )
+                return "en"
+
+        return detected_lang
+
+    async def translate_text(self, text: str) -> str:
         """
         Detects the language of the text using a hybrid approach and translates
         it if it's English or Spanish.
 
         Args:
             text: The input text to translate.
-            config: Optional RunnableConfig to pass down to the translator's
-                    translate method (e.g., for callbacks).
 
         Returns:
             The translated text, or a message indicating the language is unsupported.
@@ -179,10 +210,7 @@ class TranslationService:
                       translation setup.
             TranslationError: If the core translation fails.
         """
-        logger.debug(
-            f"TranslationService received request: '{text[:50]}...' "
-            f"with config: {config}"
-        )
+        logger.debug(f"TranslationService received request: '{text[:50]}...'")
 
         if not text.strip():
             logger.warning("Received empty or whitespace-only text.")
@@ -225,7 +253,7 @@ class TranslationService:
             )
 
         try:
-            translated_text = await self.translator.translate(text, config=config)
+            translated_text = await self.translator.translate(text)
             return translated_text
         except TranslationError as e:
             logger.error(

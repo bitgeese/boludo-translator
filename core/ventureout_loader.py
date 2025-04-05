@@ -9,7 +9,7 @@ Key Capabilities:
 - Loading raw scraped data from JSONL files
 - Applying advanced text cleaning to remove boilerplate content
 - Processing metadata for improved retrieval relevance
-- Converting cleaned data into LangChain Document objects
+- Converting cleaned data into LlamaIndex Document objects
 - Managing data file synchronization between directories
 
 The module serves as a data adapter between the raw scraped content and
@@ -34,8 +34,7 @@ import os
 from typing import Any, Dict, List
 
 # Third-party library imports
-# Update to use the new LangChain import
-from langchain_core.documents import Document
+from llama_index.core.schema import Document
 
 # Local application imports
 # Import custom exception
@@ -110,13 +109,13 @@ def load_ventureout_data(file_path: str) -> List[Dict[str, Any]]:
 
 def create_ventureout_documents(data: List[Dict[str, Any]]) -> List[Document]:
     """
-    Convert VentureOut data into LangChain Document objects.
+    Convert VentureOut data into LlamaIndex Document objects.
 
     Args:
         data: List of dictionaries containing VentureOut data with cleaned text
 
     Returns:
-        List of LangChain Document objects
+        List of LlamaIndex Document objects
     """
     documents = []
     for item in data:
@@ -138,7 +137,7 @@ def create_ventureout_documents(data: List[Dict[str, Any]]) -> List[Document]:
             "formality": "Various",  # Could be refined if we had specific info
         }
 
-        doc = Document(page_content=content.strip(), metadata=metadata)
+        doc = Document(text=content.strip(), metadata=metadata)
         documents.append(doc)
 
     logger.info(f"Created {len(documents)} VentureOut documents.")

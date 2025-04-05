@@ -8,7 +8,7 @@ This script:
 2. Reads data from a specified CSV file
 3. Cleans the text content from JSONL to remove boilerplate
 4. Combines data from both sources
-5. Splits combined text into chunks using Langchain's text splitters
+5. Splits combined text into chunks using LlamaIndex's node parsers
 6. Creates embeddings for each chunk
 7. Stores the embeddings in a Chroma vector database with metadata indicating the source
 """
@@ -22,10 +22,11 @@ from typing import Any, Dict, List, Optional
 
 # Third-party library imports
 import pandas as pd
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from llama_index.core import StorageContext, VectorStoreIndex
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.schema import Document
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.vector_stores.chroma import ChromaVectorStore
 
 # Local application imports
 # Add parent directory to path to be able to import from core
@@ -257,20 +258,20 @@ def load_csv_data(file_path: str) -> List[Dict[str, Any]]:
         raise DataLoadingError(error_msg) from e
 
 
-def create_langchain_documents(data: List[Dict[str, Any]]) -> List[Document]:
+def create_llama_documents(data: List[Dict[str, Any]]) -> List[Document]:
     """
-    Convert combined data into Langchain Document objects.
+    Convert combined data into LlamaIndex Document objects.
 
     Args:
         data: List of dictionaries containing document data with cleaned text
 
     Returns:
-        List of Langchain Document objects
+        List of LlamaIndex Document objects
 
     Raises:
         DataProcessingError: If there's an error processing the data
     """
-    langchain_docs: List[Document] = []
+    llama_docs: List[Document] = []
     required_keys: List[str] = ["cleaned_text", "origin"]  # Minimal required keys
     skipped_count: int = 0
 
@@ -295,10 +296,10 @@ def create_langchain_documents(data: List[Dict[str, Any]]) -> List[Document]:
             }
 
             # Create Document
-            doc = Document(page_content=page_content, metadata=metadata)
-            langchain_docs.append(doc)
+            doc = Document(text=page_content, metadata=metadata)
+            llama_docs.append(doc)
 
-        if not langchain_docs and len(data) > 0:
+        if not llama_docs and len(data) > 0:
             # We had data but couldn't create any documents
             raise DataProcessingError(
                 f"Failed to create any valid documents from {len(data)} data items. "
@@ -307,22 +308,22 @@ def create_langchain_documents(data: List[Dict[str, Any]]) -> List[Document]:
             )
 
         logging.info(
-            f"Created {len(langchain_docs)} Langchain documents for embedding. "
+            f"Created {len(llama_docs)} LlamaIndex documents for embedding. "
             f"Skipped {skipped_count} items."
         )
-        return langchain_docs
+        return llama_docs
     except Exception as e:
         if isinstance(e, DataProcessingError):
             # Re-raise DataProcessingError exceptions
             raise
-        error_msg = f"Error creating Langchain documents: {e}"
+        error_msg = f"Error creating LlamaIndex documents: {e}"
         logging.error(error_msg, exc_info=True)
         raise DataProcessingError(error_msg) from e
 
 
-def split_documents(documents: List[Document]) -> List[Document]:
+def parse_nodes(documents: List[Document]) -> List[Document]:
     """
-    Split documents into smaller chunks.
+    Split documents into smaller chunks using LlamaIndex's Node Parser.
 
     Args:
         documents: List of Document objects to split
@@ -339,23 +340,20 @@ def split_documents(documents: List[Document]) -> List[Document]:
 
     try:
         logging.info(f"Splitting {len(documents)} documents into chunks")
-        text_splitter: RecursiveCharacterTextSplitter = RecursiveCharacterTextSplitter(
-            chunk_size=CHUNK_SIZE,
-            chunk_overlap=CHUNK_OVERLAP,
-            length_function=len,
-            separators=["\n\n", "\n", ". ", " ", ""],
+        node_parser = SentenceSplitter(
+            chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
-        split_docs: List[Document] = text_splitter.split_documents(documents)
+        nodes = node_parser.get_nodes_from_documents(documents)
 
-        if not split_docs:
+        if not nodes:
             # This is unlikely but could happen with very short documents
             raise DataProcessingError(
                 f"Failed to create any chunks from {len(documents)} documents. "
                 f"Check your chunk size settings or document content."
             )
 
-        logging.info(f"Created {len(split_docs)} chunks")
-        return split_docs
+        logging.info(f"Created {len(nodes)} chunks")
+        return nodes
     except Exception as e:
         if isinstance(e, DataProcessingError):
             # Re-raise DataProcessingError exceptions
@@ -365,15 +363,15 @@ def split_documents(documents: List[Document]) -> List[Document]:
         raise DataProcessingError(error_msg) from e
 
 
-def create_vector_store(documents: List[Document]) -> Optional[Chroma]:
+def build_and_persist_index(documents: List[Document]) -> Optional[VectorStoreIndex]:
     """
-    Create and populate a Chroma vector store with documents.
+    Create and persist a vector index with documents.
 
     Args:
         documents: List of Document objects to embed and store
 
     Returns:
-        Populated Chroma vector store or None if creation fails
+        Populated VectorStoreIndex or None if creation fails
 
     Raises:
         VectorStoreError: If there's an error creating the vector store
@@ -387,35 +385,39 @@ def create_vector_store(documents: List[Document]) -> Optional[Chroma]:
     try:
         logging.info(f"Creating vector store with {len(documents)} chunks...")
 
-        # Verify that the OpenAI API key is set
+        # Check if OpenAI API key is set
         if "OPENAI_API_KEY" not in os.environ:
-            error_msg = (
+            raise ValueError(
                 "OPENAI_API_KEY environment variable not set. "
                 "Please set it before running this script."
             )
-            logging.error(error_msg)
-            raise ConfigurationError(error_msg)
 
         # Initialize embeddings
-        embeddings: OpenAIEmbeddings = (
-            OpenAIEmbeddings()
-        )  # Requires OPENAI_API_KEY env variable
+        embed_model = OpenAIEmbedding(api_key=os.environ["OPENAI_API_KEY"])
 
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(CHROMA_PERSIST_DIRECTORY), exist_ok=True)
 
-        # Create and persist the vector store
-        vectorstore: Chroma = Chroma.from_documents(
+        # Create the Chroma vector store
+        chroma_store = ChromaVectorStore(persist_dir=CHROMA_PERSIST_DIRECTORY)
+
+        # Setup storage context with the vector store
+        storage_context = StorageContext.from_defaults(vector_store=chroma_store)
+
+        # Create and persist the index
+        vector_index = VectorStoreIndex.from_documents(
             documents=documents,
-            embedding=embeddings,
-            persist_directory=CHROMA_PERSIST_DIRECTORY,
+            storage_context=storage_context,
+            embed_model=embed_model,
         )
-        vectorstore.persist()
+
+        # Persist to disk
+        vector_index.storage_context.persist()
 
         logging.info(
-            f"Vector store created and persisted to {CHROMA_PERSIST_DIRECTORY}"
+            f"Vector index created and persisted to {CHROMA_PERSIST_DIRECTORY}"
         )
-        return vectorstore
+        return vector_index
     except ValueError as e:
         # This could be from bad embeddings or other validation issues
         error_msg = f"Value error creating vector store: {e}"
@@ -436,17 +438,16 @@ def main():
 
     Steps:
     1. Load data from JSONL and CSV sources
-    2. Create Langchain documents
-    3. Split documents into chunks
-    4. Create vector store with embeddings
+    2. Create LlamaIndex documents
+    3. Parse documents into nodes
+    4. Create vector index with embeddings
     """
     # Check if OpenAI API key is set
     if "OPENAI_API_KEY" not in os.environ:
-        logging.error(
+        raise ValueError(
             "OPENAI_API_KEY environment variable not set. "
             "Please set it before running this script."
         )
-        return
 
     # Log configuration settings
     log_config()
@@ -467,31 +468,35 @@ def main():
         if not combined_data:
             raise DataLoadingError("No data loaded from any source. Cannot proceed.")
 
-        # Convert to Langchain documents
-        langchain_docs = create_langchain_documents(combined_data)
+        # Convert to LlamaIndex documents
+        llama_docs = create_llama_documents(combined_data)
 
-        # Split into chunks
-        split_docs = split_documents(langchain_docs)
+        # Split into chunks using node parser
+        nodes = parse_nodes(llama_docs)
 
-        # Create vector store
-        vector_store = create_vector_store(split_docs)
+        # Create vector index
+        vector_index = build_and_persist_index(nodes)
 
-        if vector_store:
+        if vector_index:
             logging.info("Processing complete!")
             # Example of how to query the vector store
             logging.info("Example query: 'What is Lunfardo?'")
             try:
-                results = vector_store.similarity_search("What is Lunfardo?", k=2)
-                for i, doc in enumerate(results):
-                    logging.info(f"--- Result {i + 1} ---")
-                    logging.info(f"Origin: {doc.metadata.get('origin')}")
-                    url_source = doc.metadata.get("url") or doc.metadata.get("Source")
+                query_engine = vector_index.as_query_engine()
+                response = query_engine.query("What is Lunfardo?")
+                logging.info("--- Query Result ---")
+                logging.info(f"Response: {response.response}")
+                logging.info(f"Source nodes: {len(response.source_nodes)}")
+                for i, node in enumerate(response.source_nodes):
+                    logging.info(f"--- Source {i + 1} ---")
+                    logging.info(f"Origin: {node.metadata.get('origin')}")
+                    url_source = node.metadata.get("url") or node.metadata.get("Source")
                     logging.info(f"Source: {url_source}")
                     logging.info(
                         f"Title/Question: "
-                        f"{doc.metadata.get('title') or doc.metadata.get('Question')}"
+                        f"{node.metadata.get('title') or node.metadata.get('Question')}"
                     )
-                    logging.info(f"Content snippet: {doc.page_content[:150]}...")
+                    logging.info(f"Content snippet: {node.text[:150]}...")
             except Exception as e:
                 logging.error(f"Error running example query: {e}")
         else:
