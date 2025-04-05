@@ -305,12 +305,28 @@ async def on_chat_end():
     """Clean up resources when a chat session ends."""
     try:
         # Get the session ID for logging
-        session_id = cl.context.session.id
+        session_id = (
+            cl.context.session.id if hasattr(cl.context, "session") else "unknown"
+        )
         logger.info(f"Cleaning up resources for ending session {session_id}")
 
-        # Clear user session data to free memory
-        cl.user_session.clear()
+        # Instead of clear(), reset specific keys we care about
+        if hasattr(cl, "user_session"):
+            # Get all keys in the session
+            keys = list(cl.user_session.keys())
+            # Remove each key individually
+            for key in keys:
+                cl.user_session.pop(key, None)
 
-        logger.info(f"Successfully cleaned up resources for session {session_id}")
+            logger.info(f"Successfully cleaned up resources for session {session_id}")
     except Exception as e:
         logger.error(f"Error during session cleanup: {e}", exc_info=True)
+
+
+@cl.on_socket_disconnect
+async def on_socket_disconnect():
+    """Handle Socket.IO disconnection events."""
+    try:
+        logger.debug("Socket disconnected")
+    except Exception as e:
+        logger.error(f"Error handling socket disconnect: {e}", exc_info=True)
