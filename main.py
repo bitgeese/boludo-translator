@@ -4,14 +4,29 @@ This provides a proper deployment architecture for Render.com
 """
 
 from chainlit.utils import mount_chainlit
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-# Define the rate limiter
-limiter = Limiter(key_func=get_remote_address, default_limits=["5/minute"])
+
+# Custom key function that exempts the health endpoint from rate limiting
+def get_key_func(request: Request):
+    # If this is a request to the health endpoint,
+    # generate a unique key to disabling rate limiting
+    if request.url.path == "/health":
+        # Return a unique key for each request to bypass rate limiting
+        import time
+
+        return f"health-{time.time()}"
+
+    # For all other requests, use the client's IP address
+    return get_remote_address(request)
+
+
+# Define the rate limiter with our custom key function
+limiter = Limiter(key_func=get_key_func, default_limits=["5/minute"])
 
 # Create FastAPI app
 app = FastAPI(
